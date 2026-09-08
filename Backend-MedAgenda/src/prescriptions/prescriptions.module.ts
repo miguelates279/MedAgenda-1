@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { PrescriptionsService } from './prescriptions.service';
 import { PrescriptionsController } from './prescriptions.controller';
-import { DatabaseModule } from 'src/db/database.module';
+import { DatabaseModule } from '../db/database.module';
 
 @Module({
   providers: [PrescriptionsService],

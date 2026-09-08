@@ -1,4 +1,4 @@
-import { Db } from "src/db/types/types";
+import { Db } from '../../db/types/types';
 import { CreateCityDto, CreateCountryDto, CreateStateDto } from "../dto/location.dto";
 
 export async function insertCountry(db: Db, dto: CreateCountryDto): Promise<number> {

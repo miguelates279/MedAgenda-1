@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { DatabaseService } from 'src/db/database.service';
+import { DatabaseService } from '../db/database.service';
 import * as AdminReads from './repo/reads';
 import * as AdminWrites from './repo/writes';
 import * as UserReads from '../users/repo/reads';

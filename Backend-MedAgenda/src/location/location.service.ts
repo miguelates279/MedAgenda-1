@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import * as LocationReads from './repo/reads'
 import * as LocationWrites from './repo/writes'
-import { DatabaseService } from 'src/db/database.service';
+import { DatabaseService } from '../db/database.service';
 import { CreateCityDto, CreateCountryDto, CreateStateDto, GetCitiesDto, GetStatesDto } from './dto/location.dto';
 @Injectable()
 export class LocationService {

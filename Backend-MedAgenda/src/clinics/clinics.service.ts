@@ -1,11 +1,11 @@
 import { BadRequestException, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
-import { AppointmentSlot } from 'src/appointments/repo/reads';
+import { AppointmentSlot } from '../appointments/repo/reads';
 import * as ClinicReads from './repo/reads';
-import { DatabaseService } from 'src/db/database.service';
-import { Roles } from 'src/auth/role_guard/roles.enum';
+import { DatabaseService } from '../db/database.service';
+import { Roles } from '../auth/role_guard/roles.enum';
 import { AddMemberToClinicDto, AddSpecialtiesToClinicDto, CreateClinicDto, CreateSpecialtyDto, GetClinicDoctorAppointmentsDto, GetClinicDto, GetClinicsInCityDto, GetClinicsInCountryDto, GetClinicsInStateDto, GetClinicsWithSpecialtyDto, GetClinicsWithSpecialtyInCityDto, GetClinicsWithSpecialtyInCountryDto } from './dto/clinics.dto';
 import * as ClinicWrites from './repo/writes'
-import { PublicDoctor } from 'src/doctors/repo';
+import { PublicDoctor } from '../doctors/repo';
 
 
 

@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { DatabaseService } from 'src/db/database.service';
-import * as AuthHelpers from 'src/auth/repo/helpers';
+import { DatabaseService } from '../db/database.service';
+import * as AuthHelpers from '../auth/repo/helpers';
 import * as UserReads from './repo/reads';
 import * as UserWrites from './repo/writes';
 import { ChangePasswordDto, CreateUserDto, UpdateProfileDto } from './dto/users.dto';

@@ -1,4 +1,4 @@
-import { Db } from "src/db/types/types";
+import { Db } from '../../db/types/types';
 
 /**
  * Update user's role within a clinic

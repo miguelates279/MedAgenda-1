@@ -3,7 +3,7 @@ import { ApiBody, ApiOkResponse, ApiOperation, ApiQuery, ApiTags } from '@nestjs
 import { City, CitySearchResult, Country, CountrySearchResult, State, StateSearchResult } from './repo/reads';
 import { CreateCityDto, CreateCountryDto, CreateStateDto, GetCitiesDto, GetStatesDto } from './dto/location.dto';
 import { LocationService } from './location.service';
-import { CityEntity, CountryEntity, StateEntity } from 'src/swagger/entities';
+import { CityEntity, CountryEntity, StateEntity } from '../swagger/entities';
 
 @ApiTags('Location')
 @Controller('location')

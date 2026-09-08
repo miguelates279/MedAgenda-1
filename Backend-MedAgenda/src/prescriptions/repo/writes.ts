@@ -1,4 +1,4 @@
-import { Db } from "src/db/types/types";
+import { Db } from '../../db/types/types';
 
 export async function insertPrescriptionRow(db: Db, clinic_id: number, doctor_id: number, patient_id: number, p_d: string): Promise<void> {
     await db.execute(

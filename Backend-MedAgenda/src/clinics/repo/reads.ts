@@ -1,7 +1,7 @@
-import { AppointmentSlot } from "src/appointments/repo/reads";
-import { Roles } from "src/auth/role_guard/roles.enum";
-import { Db } from "src/db/types/types";
-import { DoctorRow} from "src/doctors/repo";
+import { AppointmentSlot } from '../../appointments/repo/reads';
+import { Roles } from '../../auth/role_guard/roles.enum';
+import { Db } from '../../db/types/types';
+import { DoctorRow} from '../../doctors/repo';
 
 export type Clinic = {
     clinic_id: number,

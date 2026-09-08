@@ -1,4 +1,4 @@
-import { Db } from "src/db/types/types"
+import { Db } from '../../db/types/types'
 
 export type Country = {
     country_id: number,

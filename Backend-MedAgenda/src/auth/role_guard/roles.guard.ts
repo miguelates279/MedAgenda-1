@@ -1,9 +1,9 @@
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable, UnauthorizedException } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { Observable } from "rxjs";
-import { DatabaseService } from "src/db/database.service";
+import { DatabaseService } from '../../db/database.service';
 import { Roles } from "./roles.enum";
-import * as ClinicReads from 'src/clinics/repo/reads';
+import * as ClinicReads from '../../clinics/repo/reads';
 @Injectable()
 export class RolesGuard implements CanActivate {
   constructor(private readonly reflector: Reflector, private readonly db: DatabaseService) {}

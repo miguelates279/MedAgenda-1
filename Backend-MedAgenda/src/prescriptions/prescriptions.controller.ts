@@ -1,10 +1,10 @@
 import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
 import { PrescriptionsService } from './prescriptions.service';
-import { JwtAuthGuard } from 'src/auth/jwt/jwt-auth.guard';
-import { RolesGuard } from 'src/auth/role_guard/roles.guard';
+import { JwtAuthGuard } from '../auth/jwt/jwt-auth.guard';
+import { RolesGuard } from '../auth/role_guard/roles.guard';
 import { CreatePrescriptionDto } from './dto/appointments.dto';
-import { roles } from 'src/auth/role_guard/roles.decorator';
-import { Roles } from 'src/auth/role_guard/roles.enum';
+import { roles } from '../auth/role_guard/roles.decorator';
+import { Roles } from '../auth/role_guard/roles.enum';
 import { PrescriptionDoctorView, PrescriptionUserView } from './repo/reads';
 
 @UseGuards(JwtAuthGuard)

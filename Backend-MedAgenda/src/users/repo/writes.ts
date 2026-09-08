@@ -1,4 +1,4 @@
-import { Db } from "src/db/types/types";
+import { Db } from '../../db/types/types';
 import { CreateUserDto, UpdateProfileDto } from "../dto/users.dto";
 
 export async function insertUser(db: Db, dto: CreateUserDto): Promise<void> {

@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import * as DoctorReads from './repo/reads'
-import { DatabaseService } from 'src/db/database.service';
-import { Appointment } from 'src/appointments/repo/reads';
+import { DatabaseService } from '../db/database.service';
+import { Appointment } from '../appointments/repo/reads';
 
 @Injectable()
 export class DoctorsService {

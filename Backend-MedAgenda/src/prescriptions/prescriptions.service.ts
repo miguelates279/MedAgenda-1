@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { DatabaseService } from 'src/db/database.service';
+import { DatabaseService } from '../db/database.service';
 import { CreatePrescriptionDto } from './dto/appointments.dto';
 import * as PrescriptionWrites from './repo/writes';
 import * as PrescriptionReads from './repo/reads';

@@ -1,6 +1,6 @@
-import { Appointment } from "src/appointments/repo/reads";
-import { Specialty } from "src/clinics/repo"
-import { Db } from "src/db/types/types";
+import { Appointment } from '../../appointments/repo/reads';
+import { Specialty } from '../../clinics/repo'
+import { Db } from '../../db/types/types';
 
 export type PublicDoctor = {
     doctor_id: number, 

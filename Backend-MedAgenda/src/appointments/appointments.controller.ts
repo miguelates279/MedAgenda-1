@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
 import { ApiBadRequestResponse, ApiBearerAuth, ApiBody, ApiConflictResponse, ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
-import { JwtAuthGuard } from 'src/auth/jwt/jwt-auth.guard';
+import { JwtAuthGuard } from '../auth/jwt/jwt-auth.guard';
 import { AppointmentsService } from './appointments.service';
 import { CreateAppointmentDto } from './dto/appointments.dto';
 

@@ -1,4 +1,4 @@
-import { Db } from "src/db/types/types";
+import { Db } from '../../db/types/types';
 import { CreateAppointmentDto } from "../dto/appointments.dto";
 
 export async function insertAppointment(db: Db, dto: CreateAppointmentDto, patient_id: number): Promise<void> {

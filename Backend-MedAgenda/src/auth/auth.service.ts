@@ -1,11 +1,11 @@
 import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { DatabaseService } from 'src/db/database.service';
+import { DatabaseService } from '../db/database.service';
 import { LoginUserDto } from './dto/auth.dto';
-import * as UserReads from 'src/users/repo/reads';
+import * as UserReads from '../users/repo/reads';
 import * as AuthHelpers from './repo/helpers';
-import * as ClinicReads from 'src/clinics/repo/reads';
-import * as DoctorReads from 'src/doctors/repo/reads';
+import * as ClinicReads from '../clinics/repo/reads';
+import * as DoctorReads from '../doctors/repo/reads';
 @Injectable()
 export class AuthService {
     constructor(private readonly db: DatabaseService, private readonly jwtService: JwtService){}

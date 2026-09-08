@@ -1,8 +1,8 @@
 import { Controller, Get, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Appointment } from 'src/appointments/repo/reads';
-import { JwtAuthGuard } from 'src/auth/jwt/jwt-auth.guard';
-import { AppointmentEntity, PatientHistoryEntity } from 'src/swagger/entities';
+import { Appointment } from '../appointments/repo/reads';
+import { JwtAuthGuard } from '../auth/jwt/jwt-auth.guard';
+import { AppointmentEntity, PatientHistoryEntity } from '../swagger/entities';
 import { DoctorsService } from './doctors.service';
 import { PatientHistoryRow } from './repo';
 

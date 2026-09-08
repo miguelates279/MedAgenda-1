@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
-import { DatabaseService } from 'src/db/database.service';
+import { DatabaseService } from '../db/database.service';
 import { CreateAppointmentDto } from './dto/appointments.dto';
 import * as AppointmentWrites from './repo/writes';
 import * as AppointmentReads from './repo/reads';

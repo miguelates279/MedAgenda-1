@@ -1,7 +1,7 @@
 import { Transform, Type } from "class-transformer";
 import { IsArray, IsDate, IsEnum, IsNotEmpty, IsNumber, IsOptional, IsPhoneNumber, IsString, MaxLength } from "class-validator";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { Roles } from "src/auth/role_guard/roles.enum";
+import { Roles } from '../../auth/role_guard/roles.enum';
 
 
 export class CreateClinicDto {

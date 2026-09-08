@@ -1,15 +1,15 @@
 import { Body, Controller, Get, ParseArrayPipe, ParseIntPipe, Post, Query, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOkResponse, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
-import { AppointmentSlot } from 'src/appointments/repo/reads';
-import { Public } from 'src/auth/jwt/public.decorator';
-import { JwtAuthGuard } from 'src/auth/jwt/jwt-auth.guard';
-import { Roles } from 'src/auth/role_guard/roles.enum';
-import { roles } from 'src/auth/role_guard/roles.decorator';
-import { PublicDoctor } from 'src/doctors/repo';
+import { AppointmentSlot } from '../appointments/repo/reads';
+import { Public } from '../auth/jwt/public.decorator';
+import { JwtAuthGuard } from '../auth/jwt/jwt-auth.guard';
+import { Roles } from '../auth/role_guard/roles.enum';
+import { roles } from '../auth/role_guard/roles.decorator';
+import { PublicDoctor } from '../doctors/repo';
 import { Clinic, ClinicScheduleRules, Specialty } from './repo';
 import { AddMemberToClinicDto, AddSpecialtiesToClinicDto, CreateClinicDto, CreateSpecialtyDto, GetClinicDoctorAppointmentsDto, GetClinicDto } from './dto/clinics.dto';
 import { ClinicsService } from './clinics.service';
-import { AppointmentSlotEntity, ClinicEntity, PublicDoctorEntity, SpecialtyEntity } from 'src/swagger/entities';
+import { AppointmentSlotEntity, ClinicEntity, PublicDoctorEntity, SpecialtyEntity } from '../swagger/entities';
 
 @UseGuards(JwtAuthGuard)
 @ApiTags('Clinics')

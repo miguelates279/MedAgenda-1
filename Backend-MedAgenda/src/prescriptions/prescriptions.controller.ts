@@ -13,7 +13,7 @@ export class PrescriptionsController {
     constructor(private readonly prescriptionService: PrescriptionsService) {}
 
     @UseGuards(RolesGuard)
-    @roles(Roles.Doctor)
+    @roles(Roles.Doctor, Roles.Admin, Roles.Owner)
     @Post('assignPrescription')
     async assignPrescription(@Body() dto: CreatePrescriptionDto, @Req() req): Promise<void> { 
         return await this.prescriptionService.createPrescription(dto, req.user.id);   
@@ -24,8 +24,6 @@ export class PrescriptionsController {
         return await this.prescriptionService.viewUserPrescriptions(req.user.id);
     }
 
-    @UseGuards(RolesGuard)
-    @roles(Roles.Doctor)
     @Get('getPrescriptionsAssignedByDoctor')
     async getDoctorPrescriptions(@Req() req): Promise<PrescriptionDoctorView[]> {
         return await this.prescriptionService.viewPrescriptionsDoctorAssigned(req.user.id);

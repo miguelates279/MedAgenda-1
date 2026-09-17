@@ -55,7 +55,7 @@ export async function getUserClinics(db: Db, user_id: number): Promise<Clinic[]>
                 c.clinic_city_id, c.clinic_address, c.clinic_description
          FROM clinics c
          LEFT JOIN clinic_members cm ON cm.clinic_id = c.clinic_id AND cm.user_id = ?
-         WHERE c.clinic_owner = ? OR cm.role_within_clinic IN ('Admin', 'Owner')
+         WHERE c.clinic_owner = ? OR cm.role_within_clinic IN ('Admin', 'Owner', 'Doctor')
          ORDER BY c.clinic_name`,
         [user_id, user_id]
     );

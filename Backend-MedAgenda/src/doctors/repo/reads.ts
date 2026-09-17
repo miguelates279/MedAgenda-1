@@ -36,7 +36,7 @@ export type PatientHistoryRow = {
 export async function getAllDoctorAppointments(db: Db, doctor_id: number): Promise<Appointment[]> {
   return await db.query<Appointment>(
     `
-    SELECT a.appointment_id, c.clinic_id, c.clinic_name, p.first_name, p.second_name, p.first_last_name, p.second_last_name,
+    SELECT a.appointment_id, a.patient_id, c.clinic_id, c.clinic_name, p.first_name, p.second_name, p.first_last_name, p.second_last_name,
            DATE_FORMAT(CONVERT_TZ(a.scheduled_time_date, @@session.time_zone, '+00:00'), '%Y-%m-%dT%H:%i:%sZ') AS start_date_time,
            DATE_FORMAT(
              DATE_ADD(CONVERT_TZ(a.scheduled_time_date, @@session.time_zone, '+00:00'), INTERVAL c.clinic_average_appointment_time MINUTE),

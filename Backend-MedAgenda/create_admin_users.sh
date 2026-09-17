@@ -5,8 +5,8 @@
 # Contraseña para todos: 12345678
 # ============================================
 
-# URL base de la API (ajusta según tu configuración)
-API_URL="http://localhost:3001/users"
+# URL base de la API (Aiven / Vercel deployment)
+API_URL="https://med-agenda-1-three.vercel.app/users"
 
 echo "Creando usuarios administrativos..."
 echo "======================================"

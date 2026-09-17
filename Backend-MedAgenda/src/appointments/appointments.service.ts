@@ -1,6 +1,6 @@
-import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '../db/database.service';
-import { CreateAppointmentDto } from './dto/appointments.dto';
+import { CreateAppointmentDto, UpdateAppointmentDto } from './dto/appointments.dto';
 import * as AppointmentWrites from './repo/writes';
 import * as AppointmentReads from './repo/reads';
 
@@ -18,6 +18,20 @@ export class AppointmentsService {
 
     async getPatientAppointments(patientId: number): Promise<AppointmentReads.Appointment[]> {
         return await AppointmentReads.getAppointmentsByPatientId(this.db, patientId);
+    }
+
+    async updateAppointment(appointment_id: number, patient_id: number, dto: UpdateAppointmentDto): Promise<{ message: string }> {
+        if(!patient_id) throw new BadRequestException('Missing critical param patient_id.');
+        const updated = await AppointmentWrites.updateAppointment(this.db, appointment_id, patient_id, dto.appointment_description);
+        if(!updated) throw new NotFoundException('Appointment not found or you do not have permission to modify it.');
+        return { message: 'Appointment updated successfully.' };
+    }
+
+    async deleteAppointment(appointment_id: number, patient_id: number): Promise<{ message: string }> {
+        if(!patient_id) throw new BadRequestException('Missing critical param patient_id.');
+        const deleted = await AppointmentWrites.deleteAppointment(this.db, appointment_id, patient_id);
+        if(!deleted) throw new NotFoundException('Appointment not found or you do not have permission to cancel it.');
+        return { message: 'Appointment cancelled successfully.' };
     }
 
     //Helpers below

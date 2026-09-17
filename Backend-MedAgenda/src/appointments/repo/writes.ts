@@ -9,3 +9,28 @@ export async function insertAppointment(db: Db, dto: CreateAppointmentDto, patie
         [dto.clinic_id, patient_id, dto.doctor_id, start_date_time, description]
     );
 }
+
+export async function updateAppointment(
+    db: Db,
+    appointment_id: number,
+    patient_id: number,
+    description?: string
+): Promise<boolean> {
+    const result = await db.execute(
+        `UPDATE appointments SET appointment_description = ? WHERE appointment_id = ? AND patient_id = ?`,
+        [description ?? null, appointment_id, patient_id]
+    );
+    return result.affectedRows > 0;
+}
+
+export async function deleteAppointment(
+    db: Db,
+    appointment_id: number,
+    patient_id: number
+): Promise<boolean> {
+    const result = await db.execute(
+        `DELETE FROM appointments WHERE appointment_id = ? AND patient_id = ?`,
+        [appointment_id, patient_id]
+    );
+    return result.affectedRows > 0;
+}

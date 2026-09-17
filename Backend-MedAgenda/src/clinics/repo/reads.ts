@@ -82,7 +82,7 @@ export async function getClinicDetails(db: Db, clinic_id: number): Promise<Clini
 }
 
 export async function getClinicDoctors(db: Db, clinic_id: number): Promise<DoctorRow[]> {
-    return await db.query<DoctorRow>(`SELECT u.user_id, u.first_name, u.second_name, u.first_last_name, u.second_last_name, sp.specialty_id, sp.specialty_name, sp.specialty_description FROM users u JOIN clinic_members cm ON u.user_id = cm.user_id JOIN doctor_specialties ds ON ds.doctor_id = u.user_id JOIN specialties sp ON sp.specialty_id = ds.specialty_id WHERE cm.clinic_id = ? AND cm.role_within_clinic = 'Doctor'`, [clinic_id]);
+    return await db.query<DoctorRow>(`SELECT u.user_id, u.first_name, u.second_name, u.first_last_name, u.second_last_name, sp.specialty_id, sp.specialty_name, sp.specialty_description FROM users u JOIN clinic_members cm ON u.user_id = cm.user_id LEFT JOIN doctor_specialties ds ON ds.doctor_id = u.user_id LEFT JOIN specialties sp ON sp.specialty_id = ds.specialty_id WHERE cm.clinic_id = ? AND cm.role_within_clinic IN ('Doctor', 'Admin')`, [clinic_id]);
 }
 
 export async function getClinicSchedulingRules(db: Db, clinic_id: number): Promise<ClinicScheduleRules[]> {

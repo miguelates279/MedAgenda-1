@@ -49,3 +49,13 @@ export class CreateAppointmentDto {
     @IsString()
     appointment_description?: string;
 }
+
+export class UpdateAppointmentDto {
+    @ApiPropertyOptional({
+        description: 'Updated details or reason about the appointment.',
+        example: 'Follow-up for blood pressure check and prescription renewal.',
+    })
+    @IsOptional()
+    @IsString()
+    appointment_description?: string;
+}

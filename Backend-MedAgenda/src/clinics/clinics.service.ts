@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { AppointmentSlot } from '../appointments/repo/reads';
 import * as ClinicReads from './repo/reads';
 import { DatabaseService } from '../db/database.service';
@@ -20,6 +20,10 @@ export class ClinicsService {
 
     async getAllClinics(): Promise<ClinicReads.Clinic[]> {
         return await ClinicReads.getClinics(this.db);
+    }
+
+    async getUserClinics(user_id: number): Promise<ClinicReads.Clinic[]> {
+        return await ClinicReads.getUserClinics(this.db, user_id);
     }
 
     async getAllClinicsWithSpecialties(dto: GetClinicsWithSpecialtyDto): Promise<ClinicReads.Clinic[]> {
@@ -81,6 +85,13 @@ export class ClinicsService {
     async createClinic(dto: CreateClinicDto, requester_id: number): Promise<{ clinic_id: number }> {
         const clinic_id = await ClinicWrites.insertClinic(this.db, dto, requester_id);
         return { clinic_id };
+    }
+
+    async deleteClinic(clinic_id: number, requester_id: number): Promise<void> {
+        const deleted = await ClinicWrites.deleteClinic(this.db, clinic_id, requester_id);
+        if (!deleted) {
+            throw new NotFoundException('Clinic not found or user is not its owner');
+        }
     }
 
     async addMemberToClinic(dto: AddMemberToClinicDto, requester_id: number): Promise<void> {

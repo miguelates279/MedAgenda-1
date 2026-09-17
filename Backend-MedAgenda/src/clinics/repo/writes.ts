@@ -39,3 +39,11 @@ export async function insertSpecialty(db: Db, dto: CreateSpecialtyDto): Promise<
     );
     return result.insertId;
 }
+
+export async function deleteClinic(db: Db, clinic_id: number, owner_id: number): Promise<boolean> {
+    const result = await db.execute(
+        'DELETE FROM clinics WHERE clinic_id = ? AND clinic_owner = ?',
+        [clinic_id, owner_id]
+    );
+    return result.affectedRows > 0;
+}

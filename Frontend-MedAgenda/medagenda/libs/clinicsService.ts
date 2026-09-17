@@ -4,6 +4,7 @@ import { Clinic } from "../interfaces/clinic";
 import { ClinicSchedule } from "../interfaces/clinicSchedule";
 import { Doctor } from "../interfaces/doctor";
 import { apiFetch } from "./singletonFetch";
+import { UserClinic } from "../interfaces/adminUser";
 
 
 /*export const getClinics = (filters: ClinicSearchFilters): Promise<Clinic[]> => {
@@ -70,6 +71,14 @@ export const searchCities = (searchTerm: string): Promise<import('../interfaces/
 
 export const createClinic = (data: import('../interfaces/clinic').CreateClinicDTO): Promise<Clinic> => {
   return apiFetch('/clinics/createClinic', 'POST', data);
+};
+
+export const getMyClinics = (): Promise<(Clinic & UserClinic)[]> => {
+  return apiFetch('/clinics/my-clinics', 'GET');
+};
+
+export const deleteClinic = (clinicId: number): Promise<void> => {
+  return apiFetch(`/clinics/${clinicId}`, 'DELETE');
 };
 
 

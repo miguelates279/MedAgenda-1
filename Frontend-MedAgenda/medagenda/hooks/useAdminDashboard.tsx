@@ -6,7 +6,8 @@ import {
   searchUserByEmail,
   updateUserRole,
   getSpecialties,
-  getUserAdminClinics,
+  getMyClinics,
+  deleteClinic,
   addMemberToClinic,
 } from '../libs/adminService';
 import { ClinicUser, UpdateUserRoleDTO, Specialty, UserClinic, AddMemberToClinicDTO } from '../interfaces/adminUser';
@@ -43,7 +44,7 @@ export default function useAdminDashboard() {
   useEffect(() => {
     const fetchClinics = async () => {
       try {
-        const clinicsData = await getUserAdminClinics();
+        const clinicsData = await getMyClinics();
         const uniqueClinics = clinicsData.filter(
           (clinic, index, self) => index === self.findIndex((c) => c.clinic_id === clinic.clinic_id)
         );
@@ -219,6 +220,25 @@ export default function useAdminDashboard() {
     }
   };
 
+  const handleDeleteClinic = async (clinicId: number) => {
+    const clinic = userClinics.find((item) => item.clinic_id === clinicId);
+    if (!clinic || clinic.role_within_clinic !== 'Owner') return;
+    if (!window.confirm(`¿Eliminar la clínica "${clinic.clinic_name}"? Esta acción no se puede deshacer.`)) return;
+
+    try {
+      setError(null);
+      await deleteClinic(clinicId);
+      const remainingClinics = userClinics.filter((item) => item.clinic_id !== clinicId);
+      setUserClinics(remainingClinics);
+      if (selectedClinicId === clinicId) {
+        setSelectedClinicId(remainingClinics[0]?.clinic_id ?? null);
+      }
+      setSuccessMessage('Clínica eliminada correctamente.');
+    } catch (error: any) {
+      setError(error.message || 'No se pudo eliminar la clínica.');
+    }
+  };
+
   return {
     authLoading,
     isLoading,
@@ -244,5 +264,6 @@ export default function useAdminDashboard() {
     handleEditUser,
     handleCancelEdit,
     handleSaveRole,
+    handleDeleteClinic,
   };
 }

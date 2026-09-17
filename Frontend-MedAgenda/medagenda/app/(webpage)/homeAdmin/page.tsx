@@ -1,6 +1,6 @@
 "use client";
 import React from "react";
-import { FaUsersCog, FaChartBar, FaBuilding } from "react-icons/fa";
+import { FaUsersCog, FaChartBar, FaBuilding, FaTrash } from "react-icons/fa";
 import useAdminDashboard from "../../../hooks/useAdminDashboard";
 import Heading from "../../../components/atoms/Heading";
 import TabButton from "../../../components/atoms/TabButton";
@@ -39,19 +39,30 @@ export default function AHome() {
 
         {/* Clinic Selector */}
         {dashboard.userClinics.length > 0 ? (
-          <Select
-            label={dashboard.userClinics.length > 1 ? 'Seleccionar Clínica' : 'Clínica Actual'}
-            icon={<FaBuilding />}
-            value={dashboard.selectedClinicId || ''}
-            onChange={(value) => dashboard.setSelectedClinicId(Number(value))}
-            options={dashboard.userClinics.map((clinic) => ({
-              value: clinic.clinic_id,
-              label: `${clinic.clinic_name} (${clinic.role_within_clinic})`,
-            }))}
-            disabled={dashboard.userClinics.length === 1}
-            helpText={dashboard.userClinics.length === 1 ? 'Solo administras esta clínica' : undefined}
-            className="bg-white rounded-xl shadow-lg p-6 mb-6"
-          />
+          <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+            <Select
+              label={dashboard.userClinics.length > 1 ? 'Seleccionar Clínica' : 'Clínica Actual'}
+              icon={<FaBuilding />}
+              value={dashboard.selectedClinicId || ''}
+              onChange={(value) => dashboard.setSelectedClinicId(Number(value))}
+              options={dashboard.userClinics.map((clinic) => ({
+                value: clinic.clinic_id,
+                label: `${clinic.clinic_name} (${clinic.role_within_clinic})`,
+              }))}
+              disabled={dashboard.userClinics.length === 1}
+              helpText={dashboard.userClinics.length === 1 ? 'Solo administras esta clínica' : undefined}
+            />
+            {selectedClinic?.role_within_clinic === 'Owner' && (
+              <button
+                type="button"
+                onClick={() => dashboard.handleDeleteClinic(selectedClinic.clinic_id)}
+                className="mt-4 inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
+              >
+                <FaTrash aria-hidden="true" />
+                Eliminar clínica
+              </button>
+            )}
+          </div>
         ) : (
           <Alert variant="warning" className="mb-6">
             <p className="font-semibold">⚠️ No se encontraron clínicas</p>

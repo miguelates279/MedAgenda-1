@@ -49,6 +49,18 @@ export async function getClinics(db: Db): Promise<Clinic[]> {
     return await db.query<Clinic>('SELECT clinic_id, clinic_name, is_open, clinic_phone_number, clinic_city_id, clinic_address, clinic_description FROM clinics');
 }
 
+export async function getUserClinics(db: Db, user_id: number): Promise<Clinic[]> {
+    return await db.query<Clinic>(
+        `SELECT DISTINCT c.clinic_id, c.clinic_name, c.is_open, c.clinic_phone_number,
+                c.clinic_city_id, c.clinic_address, c.clinic_description
+         FROM clinics c
+         LEFT JOIN clinic_members cm ON cm.clinic_id = c.clinic_id AND cm.user_id = ?
+         WHERE c.clinic_owner = ? OR cm.role_within_clinic IN ('Admin', 'Owner')
+         ORDER BY c.clinic_name`,
+        [user_id, user_id]
+    );
+}
+
 export async function getClinicsWithSpecialties(db: Db, specialty_id: number[]): Promise<Clinic[]> {
     return await db.query<Clinic>('SELECT c.clinic_id, clinic_name, is_open, clinic_phone_number, clinic_city_id, clinic_address, clinic_description FROM clinics c JOIN clinic_specialties cs ON c.clinic_id = cs.clinic_id WHERE cs.specialty_id IN(?)', [specialty_id])
 }

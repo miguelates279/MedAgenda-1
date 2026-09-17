@@ -1,4 +1,4 @@
-import { Body, Controller, Get, ParseArrayPipe, ParseIntPipe, Post, Query, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseArrayPipe, ParseIntPipe, Post, Query, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOkResponse, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { AppointmentSlot } from '../appointments/repo/reads';
 import { Public } from '../auth/jwt/public.decorator';
@@ -31,6 +31,14 @@ export class ClinicsController {
   @Get('getAllClinics')
   async getAllClinics(): Promise<Clinic[]> {
     return this.clinicService.getAllClinics();
+  }
+
+  @ApiBearerAuth('bearer')
+  @ApiOperation({ summary: 'List clinics managed by the authenticated user.' })
+  @ApiOkResponse({ description: 'User clinics retrieved successfully.', type: ClinicEntity, isArray: true })
+  @Get('my-clinics')
+  async getMyClinics(@Req() req): Promise<Clinic[]> {
+    return this.clinicService.getUserClinics(req.user.id);
   }
 
   @Public()
@@ -167,6 +175,14 @@ export class ClinicsController {
       throw new UnauthorizedException('Usuario no autenticado');
     }
     return this.clinicService.createClinic(dto, req.user.id);
+  }
+
+  @ApiBearerAuth('bearer')
+  @ApiOperation({ summary: 'Delete a clinic owned by the authenticated user.' })
+  @ApiOkResponse({ description: 'Clinic deleted successfully.' })
+  @Delete(':clinic_id')
+  async deleteClinic(@Param('clinic_id', ParseIntPipe) clinic_id: number, @Req() req): Promise<void> {
+    await this.clinicService.deleteClinic(clinic_id, req.user.id);
   }
 
   @roles(Roles.Owner, Roles.Admin)

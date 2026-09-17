@@ -14,3 +14,9 @@ export class CreatePrescriptionDto {
     prescription_description: string;
 }
 
+export class UpdatePrescriptionDto {
+    @IsNotEmpty()
+    @IsString()
+    prescription_description: string;
+}
+

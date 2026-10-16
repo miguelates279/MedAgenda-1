@@ -11,6 +11,7 @@ let cachedServer: any;
 async function bootstrap() {
   if (!cachedServer) {
     const app = await NestFactory.create(AppModule, new ExpressAdapter(server));
+    app.enableShutdownHooks();
     app.enableCors({
       origin: true,
       methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',

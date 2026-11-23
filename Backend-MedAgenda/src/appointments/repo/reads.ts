@@ -3,6 +3,7 @@ import { Db } from '../../db/types/types';
 export type Appointment = {
     appointment_id: number,
     clinic_id: number,
+    doctor_id: number,
     clinic_name: string,
     first_name: string,
     second_name?: string,
@@ -24,6 +25,7 @@ export async function getAppointmentsByPatientId(db: Db, patientId: number): Pro
         SELECT
             a.appointment_id,
             a.clinic_id,
+            a.doctor_id,
             c.clinic_name,
             u.first_name,
             u.second_name,

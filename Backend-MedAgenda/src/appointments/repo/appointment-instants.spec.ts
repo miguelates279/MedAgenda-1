@@ -6,11 +6,13 @@ describe('Absolute appointment instants for device reminders', () => {
     it('returns ISO instants without depending on MySQL timezone tables or the connection timezone', async () => {
         const starts = Date.parse('2030-11-25T09:00:00-05:00');
         const db = { query: jest.fn(async () => [{
-            appointment_id: 7, clinic_id: 2, clinic_name: 'Centro', first_name: 'Ana',
+            appointment_id: 7, clinic_id: 2, doctor_id: 3, clinic_name: 'Centro', first_name: 'Ana',
             first_last_name: 'Ruiz', second_last_name: '', starts_at_seconds: starts / 1000,
             duration_minutes: '30',
         }]) } as unknown as Db;
         const result = await getAppointmentsByPatientId(db, 42);
+        expect(result[0].doctor_id).toBe(3);
+        expect(db.query).toHaveBeenCalledWith(expect.stringContaining('a.doctor_id'), [42]);
         expect(result[0].start_date_time).toBe('2030-11-25T14:00:00.000Z');
         expect(result[0].end_date_time).toBe('2030-11-25T14:30:00.000Z');
         expect(result[0]).not.toHaveProperty('starts_at_seconds');

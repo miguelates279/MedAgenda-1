@@ -29,11 +29,8 @@ export async function getAppointmentsByPatientId(db: Db, patientId: number): Pro
             u.second_name,
             u.first_last_name,
             u.second_last_name,
-            DATE_FORMAT(CONVERT_TZ(a.scheduled_time_date, @@session.time_zone, '-05:00'), '%Y-%m-%dT%H:%i:%s-05:00') as start_date_time,
-            DATE_FORMAT(
-                DATE_ADD(CONVERT_TZ(a.scheduled_time_date, @@session.time_zone, '-05:00'), INTERVAL c.clinic_average_appointment_time MINUTE),
-                '%Y-%m-%dT%H:%i:%s-05:00'
-            ) as end_date_time,
+            UNIX_TIMESTAMP(a.scheduled_time_date) AS starts_at_seconds,
+            c.clinic_average_appointment_time AS duration_minutes,
             a.appointment_description
         FROM appointments a
         INNER JOIN clinics c ON a.clinic_id = c.clinic_id
@@ -42,7 +39,35 @@ export async function getAppointmentsByPatientId(db: Db, patientId: number): Pro
         ORDER BY a.scheduled_time_date DESC
     `;
 
-    return await db.query<Appointment>(query, [patientId]);
+    const rows = await db.query<Omit<Appointment, 'start_date_time' | 'end_date_time'> & {
+        starts_at_seconds: number; duration_minutes: number | string;
+    }>(query, [patientId]);
+    return rows.map(({ starts_at_seconds, duration_minutes, ...appointment }) => ({
+        ...appointment,
+        start_date_time: new Date(Number(starts_at_seconds) * 1000).toISOString(),
+        end_date_time: new Date((Number(starts_at_seconds) + Number(duration_minutes) * 60) * 1000).toISOString(),
+    }));
 }
 
 
+export type PatientAppointmentForUpdate = {
+    appointment_id: number;
+    clinic_id: number;
+    doctor_id: number;
+    start_timestamp: number;
+    duration_minutes: number;
+};
+
+export async function getPatientAppointmentForUpdate(
+    db: Db, appointmentId: number, patientId: number,
+): Promise<PatientAppointmentForUpdate | undefined> {
+    const rows = await db.query<PatientAppointmentForUpdate>(
+        `SELECT a.appointment_id, a.clinic_id, a.doctor_id,
+                UNIX_TIMESTAMP(a.scheduled_time_date) AS start_timestamp,
+                c.clinic_average_appointment_time AS duration_minutes
+         FROM appointments a JOIN clinics c ON c.clinic_id = a.clinic_id
+         WHERE a.appointment_id = ? AND a.patient_id = ? FOR UPDATE`,
+        [appointmentId, patientId],
+    );
+    return rows[0];
+}

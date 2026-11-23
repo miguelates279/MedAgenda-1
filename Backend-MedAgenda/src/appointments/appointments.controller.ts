@@ -30,31 +30,28 @@ export class AppointmentsController {
         return await this.appointmentService.getPatientAppointments(req.user.id);
     }
 
+
     @Put(':id')
-    @ApiOperation({ summary: 'Update appointment notes/details for the authenticated patient.' })
+    @ApiOperation({ summary: 'Update notes or reschedule an appointment owned by the authenticated patient.' })
     @ApiParam({ name: 'id', description: 'ID of the appointment to update', type: Number })
     @ApiBody({ type: UpdateAppointmentDto })
-    @ApiOkResponse({ description: 'Appointment updated successfully.' })
-    @ApiNotFoundResponse({ description: 'Appointment not found or not owned by user.' })
+    @ApiOkResponse({ description: 'Appointment updated.' })
+    @ApiBadRequestResponse({ description: 'Invalid changes.' })
+    @ApiConflictResponse({ description: 'The selected slot is unavailable.' })
+    @ApiNotFoundResponse({ description: 'No appointment owned by this patient was found.' })
     @ApiUnauthorizedResponse({ description: 'Invalid or missing authentication token.' })
-    async updateAppointment(
-        @Param('id', ParseIntPipe) id: number,
-        @Body() dto: UpdateAppointmentDto,
-        @Req() req
-    ): Promise<{ message: string }> {
-        return await this.appointmentService.updateAppointment(id, req.user.id, dto);
+    async updateAppointment(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateAppointmentDto, @Req() req) {
+        return this.appointmentService.updateAppointment(id, req.user.id, dto);
     }
 
     @Delete(':id')
-    @ApiOperation({ summary: 'Cancel/Delete an appointment for the authenticated patient.' })
+    @ApiOperation({ summary: 'Cancel a future appointment owned by the authenticated patient.' })
     @ApiParam({ name: 'id', description: 'ID of the appointment to cancel', type: Number })
-    @ApiOkResponse({ description: 'Appointment cancelled successfully.' })
-    @ApiNotFoundResponse({ description: 'Appointment not found or not owned by user.' })
+    @ApiOkResponse({ description: 'Appointment cancelled and slot released.' })
+    @ApiBadRequestResponse({ description: 'Past appointments cannot be cancelled.' })
+    @ApiNotFoundResponse({ description: 'No appointment owned by this patient was found.' })
     @ApiUnauthorizedResponse({ description: 'Invalid or missing authentication token.' })
-    async cancelAppointment(
-        @Param('id', ParseIntPipe) id: number,
-        @Req() req
-    ): Promise<{ message: string }> {
-        return await this.appointmentService.deleteAppointment(id, req.user.id);
+    async cancelAppointment(@Param('id', ParseIntPipe) id: number, @Req() req) {
+        return this.appointmentService.deleteAppointment(id, req.user.id);
     }
 }

@@ -1,5 +1,5 @@
 import { Type } from "class-transformer";
-import { IsDate, IsNotEmpty, IsNumber, IsOptional, IsString } from "class-validator";
+import { IsDate, IsNotEmpty, IsNumber, IsOptional, IsString, ValidateIf } from "class-validator";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 
 export class CreateAppointmentDto {
@@ -50,12 +50,22 @@ export class CreateAppointmentDto {
     appointment_description?: string;
 }
 
+
 export class UpdateAppointmentDto {
-    @ApiPropertyOptional({
-        description: 'Updated details or reason about the appointment.',
-        example: 'Follow-up for blood pressure check and prescription renewal.',
-    })
-    @IsOptional()
+    @ApiPropertyOptional({ description: 'Updated appointment notes.' })
+    @ValidateIf((_object, value) => value !== undefined)
     @IsString()
     appointment_description?: string;
+
+    @ApiPropertyOptional({ type: String, format: 'date-time' })
+    @ValidateIf((_object, value) => value !== undefined)
+    @Type(() => Date)
+    @IsDate()
+    start_date_time?: Date;
+
+    @ApiPropertyOptional({ type: String, format: 'date-time' })
+    @ValidateIf((_object, value) => value !== undefined)
+    @Type(() => Date)
+    @IsDate()
+    end_date_time?: Date;
 }

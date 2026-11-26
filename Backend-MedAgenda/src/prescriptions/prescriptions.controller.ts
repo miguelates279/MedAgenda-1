@@ -1,11 +1,12 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Put, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, Param, ParseIntPipe, Post, Put, Req, UseGuards } from '@nestjs/common';
 import { PrescriptionsService } from './prescriptions.service';
 import { JwtAuthGuard } from '../auth/jwt/jwt-auth.guard';
 import { RolesGuard } from '../auth/role_guard/roles.guard';
 import { CreatePrescriptionDto, UpdatePrescriptionDto } from './dto/appointments.dto';
+import { PrescriptionDocumentParams } from './dto/document-params.dto';
 import { roles } from '../auth/role_guard/roles.decorator';
 import { Roles } from '../auth/role_guard/roles.enum';
-import { PrescriptionDoctorView, PrescriptionUserView } from './repo/reads';
+import { PrescriptionDoctorView, PrescriptionDocument, PrescriptionUserView } from './repo/reads';
 
 @UseGuards(JwtAuthGuard)
 @Controller('prescriptions')
@@ -27,6 +28,15 @@ export class PrescriptionsController {
     @Get('getPrescriptionsAssignedByDoctor')
     async getDoctorPrescriptions(@Req() req): Promise<PrescriptionDoctorView[]> {
         return await this.prescriptionService.viewPrescriptionsDoctorAssigned(req.user.id);
+    }
+
+    @Get(':id/document')
+    @Header('Cache-Control', 'private, no-store')
+    async getPrescriptionDocument(
+        @Param() params: PrescriptionDocumentParams,
+        @Req() req,
+    ): Promise<PrescriptionDocument> {
+        return await this.prescriptionService.getPrescriptionDocument(Number(params.id), req.user.id);
     }
 
     @Put(':id')

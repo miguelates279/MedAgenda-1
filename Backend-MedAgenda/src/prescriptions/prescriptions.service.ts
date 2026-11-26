@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '../db/database.service';
 import { CreatePrescriptionDto, UpdatePrescriptionDto } from './dto/appointments.dto';
 import * as PrescriptionWrites from './repo/writes';
@@ -18,6 +18,23 @@ export class PrescriptionsService {
 
     async viewPrescriptionsDoctorAssigned(requester_id: number): Promise<PrescriptionReads.PrescriptionDoctorView[]> {
         return await PrescriptionReads.readDoctorPrescriptions(this.db, requester_id);
+    }
+
+    async getPrescriptionDocument(prescription_id: number, requester_id: number): Promise<PrescriptionReads.PrescriptionDocument> {
+        if (!Number.isSafeInteger(prescription_id) || prescription_id < 1 || prescription_id > 2147483647) {
+            throw new BadRequestException('El identificador de la receta debe ser un entero positivo válido.');
+        }
+        const document = await PrescriptionReads.readPrescriptionDocument(this.db, prescription_id);
+        if (!document) {
+            throw new NotFoundException('No se encontró la receta.');
+        }
+        if (document.doctor_id !== requester_id && document.patient_id !== requester_id) {
+            throw new ForbiddenException('Solo el paciente o el médico autor pueden exportar esta receta.');
+        }
+        if (document.date_emitted === null) {
+            throw new ConflictException('La receta no tiene una fecha de emisión válida. Solicita su revisión antes de exportarla.');
+        }
+        return { ...document, date_emitted: document.date_emitted };
     }
 
     async updatePrescription(prescription_id: number, dto: UpdatePrescriptionDto, requester_id: number): Promise<void> {

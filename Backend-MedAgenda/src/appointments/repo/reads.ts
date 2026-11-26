@@ -185,3 +185,16 @@ export async function getDoctorBusyIntervals(db: Db, doctorId: number, clinicId:
     );
     return [...appointments, ...absences].map(row => ({ start: Number(row.starts_at) * 1000, end: Number(row.ends_at) * 1000 }));
 }
+
+export async function hasUnverifiableDoctorAppointments(db: Db, doctorId: number, end: number, excludeAppointmentId?: number): Promise<boolean> {
+    const params = [doctorId, end / 1000];
+    if (excludeAppointmentId !== undefined) params.push(excludeAppointmentId);
+    const rows = await db.query(
+        `SELECT 1 FROM appointments a JOIN clinics c ON c.clinic_id = a.clinic_id
+         WHERE a.doctor_id = ? AND a.appointment_status NOT IN ('cancelled', 'no_show')
+         AND a.scheduled_time_date < FROM_UNIXTIME(?)
+         AND (c.clinic_average_appointment_time IS NULL OR c.clinic_average_appointment_time NOT REGEXP '^[0-9]*[1-9][0-9]*$')
+         ${excludeAppointmentId === undefined ? '' : 'AND a.appointment_id <> ?'} LIMIT 1`, params,
+    );
+    return rows.length > 0;
+}

@@ -195,6 +195,53 @@ integration('Scheduling rules HTTP and isolated MySQL integration', () => {
     expect(otherClinic.body.slots.find((slot: { start_date_time: string }) => slot.start_date_time === iso(at('09:00'))).status).toBe('available');
   });
 
+  it.each([null, '0', 'bad'])('fails closed when another clinic has an active legacy appointment with duration %s', async duration => {
+    await seed(1000, at('08:00'));
+    await seed(1001, at('09:00'), { clinic: 102, patient: 202 });
+    await write('UPDATE clinics SET clinic_average_appointment_time=? WHERE clinic_id=102', [duration]);
+    const publicResult = await preview().expect(400);
+    const privateResult = await get('/appointments/1000/availability?date=2026-11-30').expect(400);
+    const booking = await create(at('09:00')).expect(400);
+    const rescheduling = await update(1000, { start_date_time: iso(at('09:00')), end_date_time: iso(at('09:30')), appointment_description: 'Must not save notes', expected_version: 0 }).expect(400);
+    for (const response of [publicResult, privateResult, booking, rescheduling]) {
+      expect(response.body).toEqual(expect.objectContaining({ statusCode: 400, message: expect.any(String) }));
+      const message = JSON.stringify(response.body);
+      expect(message).not.toMatch(/patient_id|doctor_id|clinic_id|appointment_id|Secret notes/);
+      expect(response.body.message).not.toContain('102');
+    }
+    const records = await db.query<{ appointment_id: number }>('SELECT appointment_id FROM appointments WHERE appointment_id >=1000 AND appointment_id <2000 ORDER BY appointment_id');
+    expect(records.map(record => record.appointment_id)).toEqual([1000, 1001]);
+    expect(await state()).toEqual(expect.objectContaining({ appointment_status: 'scheduled', status_version: 0, appointment_description: 'Secret notes never published' }));
+    expect(Number((await state()).starts)).toBe(at('08:00') / 1000);
+    expect((await state(1001)).status_version).toBe(0);
+    expect(await eventCount()).toBe(0);
+    expect(await eventCount(1001)).toBe(0);
+  });
+
+  it.each([
+    ['cancelled', null], ['cancelled', '0'], ['cancelled', 'bad'],
+    ['no_show', null], ['no_show', '0'], ['no_show', 'bad'],
+  ])('ignores a %s legacy appointment with invalid duration %s while preserving private own exclusion', async (status, duration) => {
+    await seed(1000, at('08:00'));
+    await seed(1001, at('09:00'), { clinic: 102, patient: 202, status: status as string });
+    await write('UPDATE clinics SET clinic_average_appointment_time=? WHERE clinic_id=102', [duration]);
+    const publicResult = await preview().expect(200);
+    const slotAt = (result: { body: { slots: { start_date_time: string; status: string }[] } }, time: string) => result.body.slots.find(slot => slot.start_date_time === iso(at(time)))?.status;
+    expect(slotAt(publicResult, '08:00')).toBe('booked');
+    expect(slotAt(publicResult, '09:00')).toBe('available');
+    const own = await get('/appointments/1000/availability?date=2026-11-30').expect(200);
+    expect(slotAt(own, '08:00')).toBe('current');
+    expect(slotAt(own, '09:00')).toBe('available');
+    await create(at('10:00')).expect(201);
+    await update(1000, { start_date_time: iso(at('09:00')), end_date_time: iso(at('09:30')), expected_version: 0 }).expect(200);
+    expect(Number((await state()).starts)).toBe(at('09:00') / 1000);
+    expect((await state()).status_version).toBe(1);
+    expect(await eventCount()).toBe(1);
+    expect((await state(1001)).appointment_status).toBe(status);
+    expect((await state(1001)).status_version).toBe(0);
+    expect(await eventCount(1001)).toBe(0);
+  });
+
   it('excludes only an owned reschedulable appointment through the private availability endpoint', async () => {
     await seed();
     await request(app.getHttpServer()).get('/appointments/1000/availability?date=2026-11-30').expect(401);

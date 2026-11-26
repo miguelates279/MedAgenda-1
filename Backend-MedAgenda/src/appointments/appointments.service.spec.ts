@@ -210,4 +210,31 @@ describe('Transactional appointment lifecycle', () => {
         await expect(service.createAppointment({ clinic_id: 2, doctor_id: 3, start_date_time: start, end_date_time: end }, 42)).rejects.toBeInstanceOf(BadRequestException);
     });
 
+    it('fails closed consistently when another clinic appointment has no verifiable end time', async () => {
+        const unknown = jest.spyOn(reads, 'hasUnverifiableDoctorAppointments').mockResolvedValue(true);
+        const busy = jest.spyOn(reads, 'getDoctorBusyIntervals');
+        const message = 'No se puede verificar la disponibilidad del médico. Contacta a la clínica.';
+        await expect(service.getAvailability(2, 3, '2030-11-25')).rejects.toThrow(message);
+        expect(unknown).toHaveBeenLastCalledWith(db, 3, Date.parse('2030-11-26T05:00:00Z'), undefined);
+        await expect(service.getReschedulingAvailability(7, 42, '2030-11-25')).rejects.toThrow(message);
+        expect(unknown).toHaveBeenLastCalledWith(db, 3, Date.parse('2030-11-26T05:00:00Z'), 7);
+        await expect(service.createAppointment({ clinic_id: 2, doctor_id: 3, start_date_time: start, end_date_time: end }, 42)).rejects.toThrow(message);
+        expect(unknown).toHaveBeenLastCalledWith(db, 3, end.getTime(), undefined);
+        await expect(service.updateAppointment(7, 42, { start_date_time: start, end_date_time: end })).rejects.toThrow(message);
+        expect(unknown).toHaveBeenLastCalledWith(db, 3, end.getTime(), 7);
+        expect(busy).not.toHaveBeenCalled();
+        expect(writes.insertAppointment).not.toHaveBeenCalled();
+        expect(writes.updateAppointmentState).not.toHaveBeenCalled();
+        expect(writes.recordAppointmentEvent).not.toHaveBeenCalled();
+    });
+
+    it('does not block valid availability when the unknown-duration precheck finds no relevant appointment', async () => {
+        jest.spyOn(reads, 'hasUnverifiableDoctorAppointments').mockResolvedValue(false);
+        const busy = jest.spyOn(reads, 'getDoctorBusyIntervals').mockResolvedValue([]);
+        expect((await service.getAvailability(2, 3, '2030-11-25')).slots.some(slot => slot.status === 'available')).toBe(true);
+        expect(busy).toHaveBeenCalledWith(db, 3, 2, Date.parse('2030-11-25T05:00:00Z'), Date.parse('2030-11-26T05:00:00Z'), undefined);
+        await service.createAppointment({ clinic_id: 2, doctor_id: 3, start_date_time: start, end_date_time: end }, 42);
+        expect(writes.insertAppointment).toHaveBeenCalledTimes(1);
+    });
+
 });

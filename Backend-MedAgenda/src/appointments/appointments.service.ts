@@ -5,7 +5,7 @@ import * as AppointmentWrites from './repo/writes';
 import * as AppointmentReads from './repo/reads';
 import { getClinicSchedulingRules, getRoleByIds } from '../clinics/repo/reads';
 import { allowedAppointmentActions, AppointmentAction, AppointmentRole, AppointmentStateView, canEditAppointmentNotes, canRescheduleAppointment, clinicDate, statusForAppointmentAction } from './appointment-workflow';
-import { APPOINTMENT_TIME_ZONE, AppointmentAvailability, ClinicSchedulingPolicy, clinicDayUnavailableReason, createAvailabilitySlots, isStoredAppointmentInstant, MINIMUM_APPOINTMENT_ADVANCE_MINUTES, parseClinicSchedulingPolicy, validateAppointmentSlot, validateSchedulingDate } from './appointment-scheduling';
+import { APPOINTMENT_TIME_ZONE, AppointmentAvailability, BusyInterval, ClinicSchedulingPolicy, clinicDayUnavailableReason, createAvailabilitySlots, isStoredAppointmentInstant, MINIMUM_APPOINTMENT_ADVANCE_MINUTES, parseClinicSchedulingPolicy, validateAppointmentSlot, validateSchedulingDate } from './appointment-scheduling';
 import type { Db } from '../db/types/types';
 
 @Injectable()
@@ -43,7 +43,7 @@ export class AppointmentsService {
         const policy = await this.getSchedulingPolicy(this.db, clinicId, doctorId);
         const unavailableReason = clinicDayUnavailableReason(policy, date);
         const outsideStorageRange = !isStoredAppointmentInstant(midnight + 86_400_000 - 1) && !isStoredAppointmentInstant(midnight);
-        const busy = unavailableReason || outsideStorageRange ? [] : await AppointmentReads.getDoctorBusyIntervals(this.db, doctorId, clinicId, midnight, midnight + 86_400_000, current?.appointment_id);
+        const busy = unavailableReason || outsideStorageRange ? [] : await this.getVerifiedDoctorBusyIntervals(this.db, doctorId, clinicId, midnight, midnight + 86_400_000, current?.appointment_id);
         const currentInterval = current ? { start: Date.parse(current.start_date_time), end: Date.parse(current.end_date_time) } : undefined;
         return { clinic_id: clinicId, doctor_id: doctorId, date, time_zone: APPOINTMENT_TIME_ZONE,
             server_now: now.toISOString(), minimum_advance_minutes: MINIMUM_APPOINTMENT_ADVANCE_MINUTES,
@@ -187,8 +187,15 @@ export class AppointmentsService {
         if (!doctors.length) throw new BadRequestException('Doctor not found.');
     }
 
+    private async getVerifiedDoctorBusyIntervals(db: Db, doctorId: number, clinicId: number, start: number, end: number, excludeAppointmentId?: number): Promise<BusyInterval[]> {
+        if (await AppointmentReads.hasUnverifiableDoctorAppointments(db, doctorId, end, excludeAppointmentId)) {
+            throw new BadRequestException('No se puede verificar la disponibilidad del médico. Contacta a la clínica.');
+        }
+        return AppointmentReads.getDoctorBusyIntervals(db, doctorId, clinicId, start, end, excludeAppointmentId);
+    }
+
     async isDoctorAvailable(drId: number, clinicId: number, start: Date, end: Date, excludeAppointmentId?: number, db: Db = this.db): Promise<boolean> {
-        const busy = await AppointmentReads.getDoctorBusyIntervals(db, drId, clinicId, start.getTime(), end.getTime(), excludeAppointmentId);
+        const busy = await this.getVerifiedDoctorBusyIntervals(db, drId, clinicId, start.getTime(), end.getTime(), excludeAppointmentId);
         return busy.length === 0;
     }
 

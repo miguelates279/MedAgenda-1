@@ -28,6 +28,6 @@ describe('Absolute appointment instants for device reminders', () => {
             end_date_time: new Date(start.getTime() + 1800000),
         }, 42);
         expect(db.execute).toHaveBeenCalledWith(expect.stringContaining('FROM_UNIXTIME(?)'),
-            [2, 42, 3, start.getTime() / 1000, null]);
+            [2, 42, 3, start.getTime() / 1000, null, 30]);
     });
 });

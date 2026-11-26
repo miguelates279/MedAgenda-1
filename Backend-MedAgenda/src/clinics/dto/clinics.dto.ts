@@ -1,5 +1,5 @@
 import { Transform, Type } from "class-transformer";
-import { IsArray, IsDate, IsEnum, IsNotEmpty, IsNumber, IsOptional, IsPhoneNumber, IsString, MaxLength } from "class-validator";
+import { ArrayMaxSize, ArrayUnique, IsBoolean, IsInt, Matches, Max, Min, MinLength, ValidateIf, IsArray, IsDate, IsEnum, IsNotEmpty, IsNumber, IsOptional, IsPhoneNumber, IsString, MaxLength } from "class-validator";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { Roles } from '../../auth/role_guard/roles.enum';
 
@@ -14,6 +14,8 @@ export class CreateClinicDto {
     @IsNotEmpty()
     @IsString()
     @MaxLength(25)
+    @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
+    @MinLength(1)
     clinic_name: string;
 
     @ApiProperty({
@@ -22,6 +24,7 @@ export class CreateClinicDto {
     })
     @IsNotEmpty()
     @IsPhoneNumber()
+    @MaxLength(13)
     clinic_phone_number: string;
 
     @ApiProperty({
@@ -29,7 +32,8 @@ export class CreateClinicDto {
         example: 5,
     })
     @IsNotEmpty()
-    @IsNumber()
+    @IsInt()
+    @Min(1)
     clinic_city_id: number;
 
     @ApiProperty({
@@ -40,6 +44,8 @@ export class CreateClinicDto {
     @IsNotEmpty()
     @IsString()
     @MaxLength(30)
+    @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
+    @MinLength(1)
     clinic_address: string;
 
     @ApiPropertyOptional({
@@ -48,7 +54,54 @@ export class CreateClinicDto {
     })
     @IsOptional()
     @IsString()
+    @MaxLength(5000)
     clinic_description?: string;
+
+    @ApiPropertyOptional()
+    @ValidateIf((_object, value) => value !== undefined)
+    @IsBoolean()
+    is_open?: boolean;
+
+    @ApiPropertyOptional()
+    @ValidateIf((_object, value) => value !== undefined)
+    @IsString()
+    @Matches(/^(?:[01]\d|2[0-3]):[0-5]\d$/)
+    clinic_opening_time?: string;
+
+    @ApiPropertyOptional()
+    @ValidateIf((_object, value) => value !== undefined)
+    @IsString()
+    @Matches(/^(?:(?:[01]\d|2[0-3]):[0-5]\d|24:00)$/)
+    clinic_close_time?: string;
+
+    @ApiPropertyOptional()
+    @ValidateIf((_object, value) => value !== undefined)
+    @IsInt()
+    @Min(1)
+    @Max(1440)
+    clinic_average_appointment_time?: number;
+
+    @ApiPropertyOptional({ nullable: true })
+    @IsOptional()
+    @IsString()
+    @Matches(/^(?:[01]\d|2[0-3]):[0-5]\d$/)
+    clinic_break_time?: string | null;
+
+    @ApiPropertyOptional()
+    @ValidateIf((_object, value) => value !== undefined)
+    @IsInt()
+    @Min(0)
+    @Max(1440)
+    clinic_break_duration?: number;
+
+    @ApiPropertyOptional({ type: [Number] })
+    @ValidateIf((_object, value) => value !== undefined)
+    @IsArray()
+    @ArrayMaxSize(100)
+    @ArrayUnique()
+    @IsInt({ each: true })
+    @Min(1, { each: true })
+    specialty_ids?: number[];
     
 }
 

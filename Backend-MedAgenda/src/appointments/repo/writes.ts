@@ -5,8 +5,8 @@ import { PatientAppointmentForUpdate } from './reads';
 
 export async function insertAppointment(db: Db, dto: CreateAppointmentDto, patient_id: number): Promise<number> {
     const result = await db.execute(
-        `INSERT INTO appointments (clinic_id, patient_id, doctor_id, scheduled_time_date, appointment_description, status_updated_at) VALUES (?, ?, ?, FROM_UNIXTIME(?), ?, CURRENT_TIMESTAMP)`,
-        [dto.clinic_id, patient_id, dto.doctor_id, dto.start_date_time.getTime() / 1000, dto.appointment_description ?? null],
+        `INSERT INTO appointments (clinic_id, patient_id, doctor_id, scheduled_time_date, appointment_description, duration_minutes, status_updated_at) VALUES (?, ?, ?, FROM_UNIXTIME(?), ?, ?, CURRENT_TIMESTAMP)`,
+        [dto.clinic_id, patient_id, dto.doctor_id, dto.start_date_time.getTime() / 1000, dto.appointment_description ?? null, (dto.end_date_time.getTime()-dto.start_date_time.getTime())/60_000],
     );
     return Number(result.insertId);
 }
@@ -34,6 +34,7 @@ export async function updateAppointmentState(
     if (dto?.start_date_time !== undefined) {
         assignments.push('scheduled_time_date = FROM_UNIXTIME(?)');
         values.push(dto.start_date_time.getTime() / 1000);
+        if (dto.end_date_time) { assignments.push('duration_minutes = ?'); values.push((dto.end_date_time.getTime()-dto.start_date_time.getTime())/60_000); }
     }
     const result = await db.execute(
         `UPDATE appointments SET ${assignments.join(', ')} WHERE appointment_id = ? AND status_version = ?`,

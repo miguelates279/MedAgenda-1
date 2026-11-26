@@ -133,7 +133,7 @@ export function createAvailabilitySlots(policy: ClinicSchedulingPolicy, date: st
         const start = midnight + minute * MINUTE;
         const end = start + policy.duration * MINUTE;
         let status: AvailabilityStatus = 'available';
-        if (current && current.start === start && current.end === end) status = 'current';
+        if (current && current.start === start) status = 'current';
         else if (policy.breakStart !== null && minute < policy.breakEnd! && minute + policy.duration > policy.breakStart) status = 'break';
         else if (busy.some(interval => intervalsOverlap(start, end, interval))) status = 'booked';
         else if (start <= now.getTime()) status = 'past';

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseArrayPipe, ParseIntPipe, Post, Query, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseArrayPipe, ParseIntPipe, Post, Put, Query, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOkResponse, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { AppointmentSlot } from '../appointments/repo/reads';
 import { Public } from '../auth/jwt/public.decorator';
@@ -8,6 +8,7 @@ import { roles } from '../auth/role_guard/roles.decorator';
 import { PublicDoctor } from '../doctors/repo';
 import { Clinic, ClinicScheduleRules, Specialty } from './repo';
 import { AddMemberToClinicDto, AddSpecialtiesToClinicDto, CreateClinicDto, CreateSpecialtyDto, GetClinicDoctorAppointmentsDto, GetClinicDto } from './dto/clinics.dto';
+import { OwnerProviderDto, UpdateClinicDto } from './dto/clinic-management.dto';
 import { ClinicsService } from './clinics.service';
 import { AppointmentSlotEntity, ClinicEntity, PublicDoctorEntity, SpecialtyEntity } from '../swagger/entities';
 
@@ -16,6 +17,28 @@ import { AppointmentSlotEntity, ClinicEntity, PublicDoctorEntity, SpecialtyEntit
 @Controller('clinics')
 export class ClinicsController {
   constructor(private readonly clinicService: ClinicsService){}
+
+  @Put(':clinic_id/owner-provider')
+  @ApiBearerAuth('bearer')
+  @ApiBody({ type: OwnerProviderDto })
+  @ApiOperation({ summary: 'Configure the real owner as a clinical provider without changing ownership or membership.' })
+  updateOwnerProvider(@Param('clinic_id', ParseIntPipe) clinicId: number, @Body() dto: OwnerProviderDto, @Req() req) {
+    return this.clinicService.updateOwnerProvider(clinicId, req.user.id, dto);
+  }
+
+  @Get(':clinic_id/management')
+  @ApiBearerAuth('bearer')
+  @ApiOperation({ summary: 'Get clinic settings as its owner or administrator.' })
+  getManagement(@Param('clinic_id', ParseIntPipe) clinicId: number, @Req() req) {
+    return this.clinicService.getManagement(clinicId, req.user.id);
+  }
+
+  @Put(':clinic_id/management')
+  @ApiBearerAuth('bearer')
+  @ApiOperation({ summary: 'Update clinic data, availability rules and offered specialties.' })
+  updateManagement(@Param('clinic_id', ParseIntPipe) clinicId: number, @Body() dto: UpdateClinicDto, @Req() req) {
+    return this.clinicService.updateManagement(clinicId, req.user.id, dto);
+  }
 
   @Public()
   @ApiOperation({ summary: 'List all medical specialties available.' })
@@ -201,8 +224,8 @@ export class ClinicsController {
   @ApiBody({ type: AddSpecialtiesToClinicDto })
   @ApiOkResponse({ description: 'Specialties linked to clinic.' })
   @Post('addSpecialtiesToClinic')
-  async addSpecialtiesToClinic(@Body() dto: AddSpecialtiesToClinicDto): Promise<void> {
-    return this.clinicService.addSpecialtiesToClinic(dto);
+  async addSpecialtiesToClinic(@Body() dto: AddSpecialtiesToClinicDto, @Req() req): Promise<void> {
+    return this.clinicService.addSpecialtiesToClinic(dto, req.user.id);
   }
 
   @ApiOperation({ summary: 'Create a new medical specialty.' })

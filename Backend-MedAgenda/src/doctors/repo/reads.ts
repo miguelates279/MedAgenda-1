@@ -53,11 +53,12 @@ export async function getDoctorPatientHistory(db: Db, doctor_id: number): Promis
 }
 
 export async function isUserDoctorAnywhere(db: Db, userId: number): Promise<boolean> {
-  // Un usuario es doctor si tiene rol 'Doctor' o 'Admin' en clinic_members, o si tiene especialidades registradas
   try {
     const clinicMember = await db.query(
-      'SELECT 1 FROM clinic_members WHERE user_id = ? AND role_within_clinic IN (?, ?) LIMIT 1',
-      [userId, 'Doctor', 'Admin']
+      `SELECT 1 FROM clinics c LEFT JOIN clinic_members cm ON cm.clinic_id=c.clinic_id AND cm.user_id=?
+        WHERE cm.role_within_clinic='Doctor' OR ((c.clinic_owner=? OR cm.role_within_clinic='Admin') AND EXISTS
+        (SELECT 1 FROM clinic_doctor_specialties cds WHERE cds.clinic_id=c.clinic_id AND cds.doctor_id=?)) LIMIT 1`,
+      [userId, userId, userId]
     );
     if (clinicMember.length > 0) return true;
 

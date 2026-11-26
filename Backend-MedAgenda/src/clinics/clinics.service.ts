@@ -1,3 +1,5 @@
+import { ClinicManagementService } from './clinic-management.service';
+import { OwnerProviderDto, UpdateClinicDto } from './dto/clinic-management.dto';
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { AppointmentSlot } from '../appointments/repo/reads';
 import * as ClinicReads from './repo/reads';
@@ -12,8 +14,20 @@ import { PublicDoctor } from '../doctors/repo';
 @Injectable()
 export class ClinicsService {
 
-    constructor(private readonly db: DatabaseService){}
+    constructor(private readonly db: DatabaseService, private readonly management: ClinicManagementService){}
     
+    async getManagement(clinicId: number, actorId: number) {
+        return this.management.getManagement(clinicId, actorId);
+    }
+
+    async updateManagement(clinicId: number, actorId: number, dto: UpdateClinicDto) {
+        return this.management.updateClinic(clinicId, actorId, dto);
+    }
+
+    async updateOwnerProvider(clinicId: number, actorId: number, dto: OwnerProviderDto) {
+        return this.management.updateOwnerProvider(clinicId, actorId, dto);
+    }
+
     async getAllSpecialties(): Promise<ClinicReads.Specialty[]> {
         return await ClinicReads.getAllSpecialties(this.db);
     }
@@ -67,7 +81,7 @@ export class ClinicsService {
             });
             }
 
-            doctorsMap.get(row.user_id)!.specialties.push({
+            if (row.specialty_id != null) doctorsMap.get(row.user_id)!.specialties.push({
             specialty_id: row.specialty_id,
             specialty_name: row.specialty_name,
             specialty_description: row.specialty_description
@@ -83,26 +97,19 @@ export class ClinicsService {
     }
 
     async createClinic(dto: CreateClinicDto, requester_id: number): Promise<{ clinic_id: number }> {
-        const clinic_id = await ClinicWrites.insertClinic(this.db, dto, requester_id);
-        return { clinic_id };
+        return this.management.createClinic(dto, requester_id);
     }
 
     async deleteClinic(clinic_id: number, requester_id: number): Promise<void> {
-        const deleted = await ClinicWrites.deleteClinic(this.db, clinic_id, requester_id);
-        if (!deleted) {
-            throw new NotFoundException('Clinic not found or user is not its owner');
-        }
+        return this.management.deleteClinic(clinic_id, requester_id);
     }
 
     async addMemberToClinic(dto: AddMemberToClinicDto, requester_id: number): Promise<void> {
-        const requester_role = await ClinicReads.getRoleByIds(this.db, dto.clinic_id, requester_id);
-        if(requester_role === null) throw new UnauthorizedException();
-        if(this.rankRole(requester_role.role_within_clinic) <= this.rankRole(dto.role_within_clinic)) throw new ForbiddenException(`You can't add members with roles that are higher or the same level as yours.`);
-        await ClinicWrites.insertMembership(this.db, dto);
+        return this.management.addLegacyMember(dto, requester_id);
     }
 
-    async addSpecialtiesToClinic(dto: AddSpecialtiesToClinicDto): Promise<void> {
-        await ClinicWrites.insertClinicSpecialties(this.db, dto);
+    async addSpecialtiesToClinic(dto: AddSpecialtiesToClinicDto, actorId: number): Promise<void> {
+        await this.management.addClinicSpecialties(dto.clinic_id, actorId, dto.specialty_ids);
     }
 
     async getClinicScheduleRules(dto: GetClinicDto): Promise<ClinicReads.ClinicScheduleRules> {

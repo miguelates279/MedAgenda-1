@@ -45,7 +45,7 @@ export async function getRoleByIds(db: Db, clinic_id: number, user_id: number): 
     if(ownerverif.length > 0) return {role_within_clinic: Roles.Owner};
     const role = await db.query<{ role_within_clinic: Roles}>('SELECT role_within_clinic FROM clinic_members WHERE clinic_id = ? AND user_id = ?', [clinic_id, user_id]);
     if(role.length === 0) return null;
-    return role[0];
+    return role[0].role_within_clinic === Roles.Owner ? null : role[0];
 }
 
 export async function getClinics(db: Db): Promise<Clinic[]> {
@@ -97,7 +97,15 @@ export async function getClinicDetails(db: Db, clinic_id: number): Promise<Clini
 }
 
 export async function getClinicDoctors(db: Db, clinic_id: number): Promise<DoctorRow[]> {
-    return await db.query<DoctorRow>(`SELECT u.user_id, u.first_name, u.second_name, u.first_last_name, u.second_last_name, sp.specialty_id, sp.specialty_name, sp.specialty_description FROM users u JOIN clinic_members cm ON u.user_id = cm.user_id LEFT JOIN doctor_specialties ds ON ds.doctor_id = u.user_id LEFT JOIN specialties sp ON sp.specialty_id = ds.specialty_id WHERE cm.clinic_id = ? AND cm.role_within_clinic IN ('Doctor', 'Admin')`, [clinic_id]);
+    return db.query<DoctorRow>(`SELECT u.user_id,u.first_name,u.second_name,u.first_last_name,u.second_last_name,
+        sp.specialty_id,sp.specialty_name,sp.specialty_description FROM clinics c JOIN users u ON
+        (u.user_id=c.clinic_owner OR EXISTS (SELECT 1 FROM clinic_members m WHERE m.clinic_id=c.clinic_id AND m.user_id=u.user_id))
+        LEFT JOIN clinic_members cm ON cm.clinic_id=c.clinic_id AND cm.user_id=u.user_id
+        LEFT JOIN clinic_doctor_specialties cds ON cds.clinic_id=c.clinic_id AND cds.doctor_id=u.user_id
+        LEFT JOIN specialties sp ON sp.specialty_id=cds.specialty_id
+        WHERE c.clinic_id=? AND (cm.role_within_clinic='Doctor' OR
+          ((c.clinic_owner=u.user_id OR cm.role_within_clinic='Admin') AND cds.specialty_id IS NOT NULL))
+        ORDER BY u.first_last_name,u.user_id,sp.specialty_id`, [clinic_id]);
 }
 
 export async function getClinicSchedulingRules(db: Db, clinic_id: number): Promise<ClinicScheduleRules[]> {
@@ -108,7 +116,7 @@ export async function getClinicDoctorAppointmentsForDay(db: Db, clinic_id: numbe
     const start = Date.parse(`${appointment_date}T00:00:00-05:00`) / 1000;
     const rows = await db.query<{ appointment_id: number; starts_at_seconds: number; duration_minutes: number | string }>(
         `SELECT a.appointment_id, UNIX_TIMESTAMP(a.scheduled_time_date) AS starts_at_seconds,
-                c.clinic_average_appointment_time AS duration_minutes
+                COALESCE(a.duration_minutes,c.clinic_average_appointment_time) AS duration_minutes
          FROM appointments a JOIN clinics c ON a.clinic_id = c.clinic_id
          WHERE a.clinic_id = ? AND a.doctor_id = ?
            AND a.appointment_status NOT IN ('cancelled', 'no_show')
@@ -124,6 +132,13 @@ export async function getClinicDoctorAppointmentsForDay(db: Db, clinic_id: numbe
 }
 
 export async function isUserAdminAnywhere(db: Db, user_id: number): Promise<boolean> {
-    const q = await db.query(`SELECT 1 FROM clinic_members WHERE user_id = ? AND role_within_clinic = 'Admin'`, [user_id]);
+    const q = await db.query(`SELECT 1 FROM clinics c LEFT JOIN clinic_members cm ON cm.clinic_id=c.clinic_id AND cm.user_id=? WHERE c.clinic_owner=? OR cm.role_within_clinic='Admin'`, [user_id, user_id]);
     return q.length > 0;
+}
+
+export async function isClinicDoctor(db: Db, clinicId: number, userId: number): Promise<boolean> {
+    return (await db.query(`SELECT 1 FROM clinics c LEFT JOIN clinic_members cm ON cm.clinic_id=c.clinic_id AND cm.user_id=?
+        WHERE c.clinic_id=? AND (cm.role_within_clinic='Doctor' OR
+        ((c.clinic_owner=? OR cm.role_within_clinic='Admin') AND EXISTS
+          (SELECT 1 FROM clinic_doctor_specialties cds WHERE cds.clinic_id=c.clinic_id AND cds.doctor_id=?))) LIMIT 1`, [userId, clinicId, userId, userId])).length>0;
 }

@@ -37,7 +37,7 @@ const APPOINTMENT_COLUMNS = `a.appointment_id, a.clinic_id, a.doctor_id, a.patie
     a.appointment_description, a.appointment_status, a.status_version,
     UNIX_TIMESTAMP(a.status_updated_at) AS updated_at_seconds,
     UNIX_TIMESTAMP(a.scheduled_time_date) AS starts_at_seconds,
-    c.clinic_average_appointment_time AS duration_minutes,
+    COALESCE(a.duration_minutes,c.clinic_average_appointment_time) AS duration_minutes,
     CASE WHEN c.clinic_owner = ? THEN 'Owner' ELSE cm.role_within_clinic END AS actor_role`;
 
 function mapAppointments(rows: AppointmentRow[], actorId: number): Appointment[] {
@@ -142,7 +142,7 @@ export async function getPatientAppointmentForUpdate(db: Db, appointmentId: numb
     const rows = await db.query<PatientAppointmentForUpdate>(
         `SELECT a.appointment_id, a.patient_id, a.clinic_id, a.doctor_id, a.appointment_status, a.status_version,
                 a.status_updated_at, UNIX_TIMESTAMP(a.scheduled_time_date) AS start_timestamp,
-                (SELECT clinic_average_appointment_time FROM clinics c WHERE c.clinic_id = a.clinic_id) AS duration_minutes
+                COALESCE(a.duration_minutes,(SELECT clinic_average_appointment_time FROM clinics c WHERE c.clinic_id = a.clinic_id)) AS duration_minutes
          FROM appointments a WHERE a.appointment_id = ?${patientId === undefined ? '' : ' AND a.patient_id = ?'} FOR UPDATE`,
         patientId === undefined ? [appointmentId] : [appointmentId, patientId],
     );
@@ -171,11 +171,11 @@ export async function getDoctorBusyIntervals(db: Db, doctorId: number, clinicId:
     if (excludeAppointmentId !== undefined) params.push(excludeAppointmentId);
     const appointments = await db.query<{ starts_at: number; ends_at: number }>(
         `SELECT UNIX_TIMESTAMP(a.scheduled_time_date) AS starts_at,
-         UNIX_TIMESTAMP(DATE_ADD(a.scheduled_time_date, INTERVAL c.clinic_average_appointment_time MINUTE)) AS ends_at
+         UNIX_TIMESTAMP(DATE_ADD(a.scheduled_time_date, INTERVAL COALESCE(a.duration_minutes,c.clinic_average_appointment_time) MINUTE)) AS ends_at
          FROM appointments a JOIN clinics c ON c.clinic_id = a.clinic_id
          WHERE a.doctor_id = ? AND a.appointment_status NOT IN ('cancelled', 'no_show')
          AND a.scheduled_time_date < FROM_UNIXTIME(?)
-         AND DATE_ADD(a.scheduled_time_date, INTERVAL c.clinic_average_appointment_time MINUTE) > FROM_UNIXTIME(?)
+         AND DATE_ADD(a.scheduled_time_date, INTERVAL COALESCE(a.duration_minutes,c.clinic_average_appointment_time) MINUTE) > FROM_UNIXTIME(?)
          ${excludeAppointmentId === undefined ? '' : 'AND a.appointment_id <> ?'}`, params,
     );
     const absences = await db.query<{ starts_at: number; ends_at: number }>(
@@ -193,8 +193,12 @@ export async function hasUnverifiableDoctorAppointments(db: Db, doctorId: number
         `SELECT 1 FROM appointments a JOIN clinics c ON c.clinic_id = a.clinic_id
          WHERE a.doctor_id = ? AND a.appointment_status NOT IN ('cancelled', 'no_show')
          AND a.scheduled_time_date < FROM_UNIXTIME(?)
-         AND (c.clinic_average_appointment_time IS NULL OR c.clinic_average_appointment_time NOT REGEXP '^[0-9]*[1-9][0-9]*$')
+         AND (a.duration_minutes IS NULL AND (c.clinic_average_appointment_time IS NULL OR c.clinic_average_appointment_time NOT REGEXP '^[0-9]*[1-9][0-9]*$'))
          ${excludeAppointmentId === undefined ? '' : 'AND a.appointment_id <> ?'} LIMIT 1`, params,
     );
     return rows.length > 0;
+}
+
+export async function getAppointmentClinicId(db: Db, appointmentId: number, patientId: number): Promise<number | undefined> {
+    return (await db.query<{clinic_id:number}>('SELECT clinic_id FROM appointments WHERE appointment_id=? AND patient_id=?', [appointmentId, patientId]))[0]?.clinic_id;
 }

@@ -24,13 +24,14 @@ describe('Transactional appointment lifecycle', () => {
             appointment_status: 'scheduled', status_version: 0, status_updated_at: null };
         actorRole = null;
         anotherConsultation = false;
-        db = { query: jest.fn(async (sql: string) => sql.includes('FROM users') ? [{ user_id: 3 }] :
+        db = { query: jest.fn(async (sql: string) => sql.includes('FROM users') ? [{ user_id: 3 }] : sql.includes('FOR SHARE') ? [{ clinic_id: 2 }] :
                 sql.includes("appointment_status = 'in_progress'") && anotherConsultation ? [{ appointment_id: 8 }] : []),
             execute: jest.fn(), inTx: jest.fn(async fn => fn(db)) };
         service = new AppointmentsService(db as unknown as DatabaseService);
         jest.spyOn(clinics, 'getClinicSchedulingRules').mockResolvedValue([{ is_open: 1, minimum_advance_minutes: 60, clinic_opening_time: '08:00', clinic_close_time: '18:00', clinic_break_time: '12:00', clinic_break_duration: '60', clinic_average_appointment_time: '30' }]);
         jest.spyOn(reads, 'getAppointmentDoctorId').mockImplementation(async (_db, _id, patientId) =>
             current && (patientId === undefined || patientId === current.patient_id) ? current.doctor_id : undefined);
+        jest.spyOn(reads, 'getAppointmentClinicId').mockImplementation(async () => current?.clinic_id);
         jest.spyOn(reads, 'getPatientAppointmentForUpdate').mockImplementation(async () => current);
         jest.spyOn(clinics, 'getRoleByIds').mockImplementation(async (_db, _clinic, actor) =>
             actor === 3 ? { role_within_clinic: Roles.Doctor } : actorRole ? { role_within_clinic: actorRole } : null);
@@ -95,6 +96,7 @@ describe('Transactional appointment lifecycle', () => {
     });
 
     it('reschedules the same ID, excludes its slot and resets confirmation with an audited version', async () => {
+        current!.start_timestamp += 1800;
         current!.appointment_status = 'confirmed';
         const available = jest.spyOn(service, 'isDoctorAvailable').mockResolvedValue(true);
         jest.spyOn(service, 'isClinicAvailable').mockResolvedValue(true);
@@ -122,6 +124,7 @@ describe('Transactional appointment lifecycle', () => {
     });
 
     it('rejects occupied slots, terminal edits and past rescheduling', async () => {
+        current!.start_timestamp += 1800;
         jest.spyOn(service, 'isDoctorAvailable').mockResolvedValue(false);
         await expect(service.updateAppointment(7, 42, { start_date_time: start, end_date_time: end })).rejects.toBeInstanceOf(ConflictException);
         current!.appointment_status = 'completed';
@@ -211,6 +214,7 @@ describe('Transactional appointment lifecycle', () => {
     });
 
     it('fails closed consistently when another clinic appointment has no verifiable end time', async () => {
+        current!.start_timestamp += 1800;
         const unknown = jest.spyOn(reads, 'hasUnverifiableDoctorAppointments').mockResolvedValue(true);
         const busy = jest.spyOn(reads, 'getDoctorBusyIntervals');
         const message = 'No se puede verificar la disponibilidad del médico. Contacta a la clínica.';

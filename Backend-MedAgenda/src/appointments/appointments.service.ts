@@ -3,7 +3,7 @@ import { DatabaseService } from '../db/database.service';
 import { AppointmentActionDto, CreateAppointmentDto, UpdateAppointmentDto } from './dto/appointments.dto';
 import * as AppointmentWrites from './repo/writes';
 import * as AppointmentReads from './repo/reads';
-import { getClinicSchedulingRules, getRoleByIds } from '../clinics/repo/reads';
+import { getClinicSchedulingRules, getRoleByIds, isClinicDoctor } from '../clinics/repo/reads';
 import { allowedAppointmentActions, AppointmentAction, AppointmentRole, AppointmentStateView, canEditAppointmentNotes, canRescheduleAppointment, clinicDate, statusForAppointmentAction } from './appointment-workflow';
 import { APPOINTMENT_TIME_ZONE, AppointmentAvailability, BusyInterval, ClinicSchedulingPolicy, clinicDayUnavailableReason, createAvailabilitySlots, isStoredAppointmentInstant, MINIMUM_APPOINTMENT_ADVANCE_MINUTES, parseClinicSchedulingPolicy, validateAppointmentSlot, validateSchedulingDate } from './appointment-scheduling';
 import type { Db } from '../db/types/types';
@@ -16,6 +16,7 @@ export class AppointmentsService {
         if (!requesterId) throw new BadRequestException('Missing critical parameter requester_id.');
         await this.db.inTx(async tx => {
             await this.lockDoctor(tx, dto.doctor_id);
+            await this.lockClinic(tx, dto.clinic_id);
             const now = new Date(Date.now());
             await this.validateScheduling(tx, dto.clinic_id, dto.doctor_id, dto.start_date_time, dto.end_date_time, now);
             const appointmentId = await AppointmentWrites.insertAppointment(tx, dto, requesterId);
@@ -58,6 +59,7 @@ export class AppointmentsService {
         if (!doctorRole || !['Owner', 'Admin', 'Doctor'].includes(doctorRole.role_within_clinic)) {
             throw new BadRequestException('El médico no pertenece a esta clínica.');
         }
+        if (doctorRole.role_within_clinic !== 'Doctor' && !await isClinicDoctor(db, clinicId, doctorId)) throw new BadRequestException('El usuario no atiende como médico en esta clínica.');
         return parseClinicSchedulingPolicy(rules);
     }
 
@@ -100,8 +102,11 @@ export class AppointmentsService {
         if (!changesTime && dto.appointment_description === undefined) throw new BadRequestException('No appointment changes supplied.');
         const doctorId = await AppointmentReads.getAppointmentDoctorId(this.db, id, patientId);
         if (doctorId === undefined) throw new NotFoundException('Cita no encontrada.');
+        const clinicId = await AppointmentReads.getAppointmentClinicId(this.db, id, patientId);
+        if (clinicId === undefined) throw new NotFoundException('Cita no encontrada.');
         return this.db.inTx(async tx => {
             await this.lockDoctor(tx, doctorId);
+            if (changesTime) await this.lockClinic(tx, clinicId);
             const current = await AppointmentReads.getPatientAppointmentForUpdate(tx, id, patientId);
             if (!current) throw new NotFoundException('Cita no encontrada.');
             this.assertVersion(current, dto.expected_version);
@@ -113,6 +118,7 @@ export class AppointmentsService {
                     'Solo puedes editar notas de citas futuras programadas o confirmadas.');
             }
             if (changesTime) {
+                if (dto.start_date_time!.getTime() === Number(current.start_timestamp)*1000) throw new BadRequestException('Selecciona un horario diferente al actual.');
                 await this.validateScheduling(tx, current.clinic_id, current.doctor_id, dto.start_date_time!, dto.end_date_time!, now, id);
             }
             const nextStatus = changesTime ? 'scheduled' : current.appointment_status;
@@ -180,6 +186,11 @@ export class AppointmentsService {
         const { appointment_id, appointment_status, status_version, status_updated_at, allowed_actions, can_reschedule, can_edit_notes, minimum_advance_minutes, change_deadline, server_now } = appointment;
         return { appointment_id, appointment_status, status_version, status_updated_at, allowed_actions, can_reschedule,
             can_edit_notes, minimum_advance_minutes, change_deadline, server_now };
+    }
+
+    private async lockClinic(db: Db, clinicId: number): Promise<void> {
+        const clinics = await db.query('SELECT clinic_id FROM clinics WHERE clinic_id=? FOR SHARE', [clinicId]);
+        if (!clinics.length) throw new NotFoundException('Clínica no encontrada.');
     }
 
     private async lockDoctor(db: Db, doctorId: number): Promise<void> {

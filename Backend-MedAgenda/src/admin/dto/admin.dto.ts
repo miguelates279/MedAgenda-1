@@ -1,36 +1,46 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNotEmpty, IsNumber, IsBoolean, IsOptional, IsEmail } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { IsBoolean, IsEmail, IsInt, IsOptional, MaxLength, Min } from 'class-validator';
+
+export class ClinicUsersQueryDto {
+    @ApiProperty({ minimum: 1 })
+    @Type(() => Number)
+    @IsInt()
+    @Min(1)
+    clinic_id: number;
+}
+
+export class SearchClinicUserQueryDto extends ClinicUsersQueryDto {
+    @ApiProperty()
+    @Transform(({ value }) => typeof value === 'string' ? value.trim().toLowerCase() : value)
+    @IsEmail()
+    @MaxLength(255)
+    email: string;
+}
 
 export class UpdateUserRoleDto {
-    @ApiProperty({
-        description: 'Email of the user to update',
-        example: 'user@example.com',
-    })
-    @IsNotEmpty()
+    @ApiProperty({ minimum: 1 })
+    @IsInt()
+    @Min(1)
+    clinic_id: number;
+
+    @ApiProperty()
+    @Transform(({ value }) => typeof value === 'string' ? value.trim().toLowerCase() : value)
     @IsEmail()
+    @MaxLength(255)
     email: string;
 
-    @ApiProperty({
-        description: 'Whether the user should be a doctor',
-        example: true,
-    })
-    @IsNotEmpty()
+    @ApiProperty()
     @IsBoolean()
     isDoctor: boolean;
 
-    @ApiProperty({
-        description: 'Whether the user should be an admin',
-        example: false,
-    })
-    @IsNotEmpty()
+    @ApiProperty()
     @IsBoolean()
     isAdmin: boolean;
 
-    @ApiPropertyOptional({
-        description: 'Specialty ID to assign to the doctor (required if isDoctor is true)',
-        example: 1,
-    })
+    @ApiPropertyOptional()
     @IsOptional()
-    @IsNumber()
+    @IsInt()
+    @Min(1)
     specialty_id?: number;
 }

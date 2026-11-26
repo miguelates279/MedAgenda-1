@@ -1,6 +1,8 @@
 import { Type } from "class-transformer";
-import { IsDate, IsNotEmpty, IsNumber, IsOptional, IsString, ValidateIf } from "class-validator";
+import { IsDate, IsIn, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, Min, ValidateIf } from "class-validator";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+import { APPOINTMENT_ACTIONS } from "../appointment-workflow";
+import type { AppointmentAction } from "../appointment-workflow";
 
 export class CreateAppointmentDto {
     @ApiProperty({
@@ -8,7 +10,8 @@ export class CreateAppointmentDto {
         example: 12,
     })
     @IsNotEmpty()
-    @IsNumber()
+    @IsInt()
+    @Min(1)
     clinic_id: number;
 
     @ApiProperty({
@@ -16,7 +19,8 @@ export class CreateAppointmentDto {
         example: 8,
     })
     @IsNotEmpty()
-    @IsNumber()
+    @IsInt()
+    @Min(1)
     doctor_id: number;
 
     @ApiProperty({
@@ -52,6 +56,12 @@ export class CreateAppointmentDto {
 
 
 export class UpdateAppointmentDto {
+    @ApiPropertyOptional({ minimum: 0, description: 'Last observed appointment version.' })
+    @ValidateIf((_object, value) => value !== undefined)
+    @IsInt()
+    @Min(0)
+    expected_version?: number;
+
     @ApiPropertyOptional({ description: 'Updated appointment notes.' })
     @ValidateIf((_object, value) => value !== undefined)
     @IsString()
@@ -68,4 +78,15 @@ export class UpdateAppointmentDto {
     @Type(() => Date)
     @IsDate()
     end_date_time?: Date;
+}
+
+export class AppointmentActionDto {
+    @ApiProperty({ enum: APPOINTMENT_ACTIONS })
+    @IsIn(APPOINTMENT_ACTIONS)
+    action: AppointmentAction;
+
+    @ApiProperty({ minimum: 0, description: 'Version returned by the last appointment read.' })
+    @IsInt()
+    @Min(0)
+    expected_version: number;
 }

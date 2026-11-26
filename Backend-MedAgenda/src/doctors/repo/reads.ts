@@ -1,4 +1,4 @@
-import { Appointment } from '../../appointments/repo/reads';
+import { Appointment, getAppointmentsByDoctorId } from '../../appointments/repo/reads';
 import { Specialty } from '../../clinics/repo'
 import { Db } from '../../db/types/types';
 
@@ -34,32 +34,22 @@ export type PatientHistoryRow = {
 };
 
 export async function getAllDoctorAppointments(db: Db, doctor_id: number): Promise<Appointment[]> {
-  return await db.query<Appointment>(
-    `
-    SELECT a.appointment_id, a.patient_id, c.clinic_id, c.clinic_name, p.first_name, p.second_name, p.first_last_name, p.second_last_name,
-           DATE_FORMAT(CONVERT_TZ(a.scheduled_time_date, @@session.time_zone, '+00:00'), '%Y-%m-%dT%H:%i:%sZ') AS start_date_time,
-           DATE_FORMAT(
-             DATE_ADD(CONVERT_TZ(a.scheduled_time_date, @@session.time_zone, '+00:00'), INTERVAL c.clinic_average_appointment_time MINUTE),
-             '%Y-%m-%dT%H:%i:%sZ'
-           ) AS end_date_time,
-           a.appointment_description
-    FROM appointments a 
-    JOIN users p ON a.patient_id = p.user_id
-    JOIN clinics c ON a.clinic_id = c.clinic_id
-    WHERE a.doctor_id = ?
-    `, [doctor_id]);
-};
+  return getAppointmentsByDoctorId(db, doctor_id);
+}
 
 export async function getDoctorPatientHistory(db: Db, doctor_id: number): Promise<PatientHistoryRow[]> {
-  return await db.query<PatientHistoryRow>(
-    `
-    SELECT u.user_id, u.first_name, u.second_name, u.first_last_name, a.clinic_id, c.clinic_name, a.appointment_description, 
-           DATE_FORMAT(CONVERT_TZ(a.scheduled_time_date, @@session.time_zone, '+00:00'), '%Y-%m-%dT%H:%i:%sZ') AS appointment_date 
-    FROM users u 
-    JOIN appointments a ON u.user_id = a.patient_id 
-    JOIN clinics c ON a.clinic_id = c.clinic_id
-    WHERE a.doctor_id = ?
-    `, [doctor_id]);
+  const rows = await db.query<Omit<PatientHistoryRow, 'appointment_date'> & { starts_at_seconds: number }>(
+    `SELECT u.user_id, u.first_name, u.second_name, u.first_last_name, a.clinic_id, c.clinic_name,
+            a.appointment_description, UNIX_TIMESTAMP(a.scheduled_time_date) AS starts_at_seconds
+     FROM users u JOIN appointments a ON u.user_id = a.patient_id JOIN clinics c ON a.clinic_id = c.clinic_id
+     WHERE a.doctor_id = ? AND a.appointment_status = 'completed'
+       AND (c.clinic_owner = a.doctor_id OR EXISTS (SELECT 1 FROM clinic_members cm
+         WHERE cm.clinic_id = a.clinic_id AND cm.user_id = a.doctor_id AND cm.role_within_clinic IN ('Doctor', 'Admin')))
+     ORDER BY a.scheduled_time_date DESC, a.appointment_id DESC`, [doctor_id],
+  );
+  return rows.map(({ starts_at_seconds, ...row }) => ({
+    ...row, appointment_date: new Date(Number(starts_at_seconds) * 1000).toISOString(),
+  }));
 }
 
 export async function isUserDoctorAnywhere(db: Db, userId: number): Promise<boolean> {

@@ -102,24 +102,22 @@ export async function getClinicSchedulingRules(db: Db, clinic_id: number): Promi
 }
 
 export async function getClinicDoctorAppointmentsForDay(db: Db, clinic_id: number, doctor_id: number, appointment_date: string): Promise<AppointmentSlot[]> {
-    return await db.query<AppointmentSlot>(
-        `
-        SELECT 
-            a.appointment_id, 
-            DATE_FORMAT(CONVERT_TZ(a.scheduled_time_date, '+00:00', '-05:00'), '%Y-%m-%dT%H:%i:%s-05:00') AS start_date_time, 
-            DATE_FORMAT(
-                DATE_ADD(CONVERT_TZ(a.scheduled_time_date, '+00:00', '-05:00'), INTERVAL c.clinic_average_appointment_time MINUTE),
-                '%Y-%m-%dT%H:%i:%s-05:00'
-            ) AS end_date_time
-        FROM appointments a
-        JOIN clinics c ON a.clinic_id = c.clinic_id
-        WHERE a.clinic_id = ? 
-          AND a.doctor_id = ? 
-          AND DATE(CONVERT_TZ(a.scheduled_time_date, '+00:00', '-05:00')) = DATE(STR_TO_DATE(?, '%Y-%m-%d'))
-        ORDER BY a.scheduled_time_date ASC
-        `,
-        [clinic_id, doctor_id, appointment_date]
+    const start = Date.parse(`${appointment_date}T00:00:00-05:00`) / 1000;
+    const rows = await db.query<{ appointment_id: number; starts_at_seconds: number; duration_minutes: number | string }>(
+        `SELECT a.appointment_id, UNIX_TIMESTAMP(a.scheduled_time_date) AS starts_at_seconds,
+                c.clinic_average_appointment_time AS duration_minutes
+         FROM appointments a JOIN clinics c ON a.clinic_id = c.clinic_id
+         WHERE a.clinic_id = ? AND a.doctor_id = ?
+           AND a.appointment_status NOT IN ('cancelled', 'no_show')
+           AND a.scheduled_time_date >= FROM_UNIXTIME(?) AND a.scheduled_time_date < FROM_UNIXTIME(?)
+         ORDER BY a.scheduled_time_date ASC`,
+        [clinic_id, doctor_id, start, start + 86_400],
     );
+    return rows.map(row => ({
+        appointment_id: row.appointment_id,
+        start_date_time: new Date(Number(row.starts_at_seconds) * 1000).toISOString(),
+        end_date_time: new Date((Number(row.starts_at_seconds) + Number(row.duration_minutes) * 60) * 1000).toISOString(),
+    }));
 }
 
 export async function isUserAdminAnywhere(db: Db, user_id: number): Promise<boolean> {

@@ -1,89 +1,169 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { AppointmentsService } from './appointments.service';
 import { DatabaseService } from '../db/database.service';
+import * as reads from './repo/reads';
+import * as writes from './repo/writes';
+import * as clinics from '../clinics/repo/reads';
+import { Roles } from '../auth/role_guard/roles.enum';
+import { allowedAppointmentActions, canRescheduleAppointment } from './appointment-workflow';
 
-describe('Appointment lifecycle for local reminders', () => {
-    const start = new Date('2030-11-25T14:00:00Z');
+describe('Transactional appointment lifecycle', () => {
+    const start = new Date('2030-11-25T15:00:00Z');
     const end = new Date(start.getTime() + 30 * 60_000);
     let db: { query: jest.Mock; execute: jest.Mock; inTx: jest.Mock };
     let service: AppointmentsService;
-    let owned: object | undefined;
+    let current: reads.PatientAppointmentForUpdate | undefined;
+    let actorRole: Roles | null;
+    let anotherConsultation: boolean;
 
     beforeEach(() => {
-        owned = { appointment_id: 7, clinic_id: 2, doctor_id: 3,
-            start_timestamp: start.getTime() / 1000, duration_minutes: 30 };
-        db = { query: jest.fn(async (sql: string) => sql.includes('FROM users') ? [{ user_id: 3 }] : sql.includes('FOR UPDATE') ? (owned ? [owned] : []) : []),
-            execute: jest.fn(async () => ({ affectedRows: 1 })),
-            inTx: jest.fn(async fn => fn(db)) };
+        jest.useFakeTimers().setSystemTime(new Date('2030-11-25T14:00:00Z'));
+        current = { appointment_id: 7, patient_id: 42, clinic_id: 2, doctor_id: 3,
+            start_timestamp: start.getTime() / 1000, duration_minutes: 30,
+            appointment_status: 'scheduled', status_version: 0, status_updated_at: null };
+        actorRole = null;
+        anotherConsultation = false;
+        db = { query: jest.fn(async (sql: string) => sql.includes('FROM users') ? [{ user_id: 3 }] :
+                sql.includes("appointment_status = 'in_progress'") && anotherConsultation ? [{ appointment_id: 8 }] : []),
+            execute: jest.fn(), inTx: jest.fn(async fn => fn(db)) };
         service = new AppointmentsService(db as unknown as DatabaseService);
+        jest.spyOn(reads, 'getAppointmentDoctorId').mockImplementation(async (_db, _id, patientId) =>
+            current && (patientId === undefined || patientId === current.patient_id) ? current.doctor_id : undefined);
+        jest.spyOn(reads, 'getPatientAppointmentForUpdate').mockImplementation(async () => current);
+        jest.spyOn(clinics, 'getRoleByIds').mockImplementation(async (_db, _clinic, actor) =>
+            actor === 3 ? { role_within_clinic: Roles.Doctor } : actorRole ? { role_within_clinic: actorRole } : null);
+        jest.spyOn(reads, 'getAppointmentByIdForActor').mockImplementation(async (_db, _id, actor) => {
+            if (!current) return undefined;
+            const context = { ...current, actor_role: actor === 3 ? Roles.Doctor : actorRole,
+                start_date_time: new Date(current.start_timestamp * 1000).toISOString() };
+            return { ...context, clinic_name: 'Centro', first_name: 'Ana', first_last_name: 'Ruiz', second_last_name: '',
+                end_date_time: new Date((current.start_timestamp + 1800) * 1000).toISOString(),
+                status_updated_at: current.status_updated_at, allowed_actions: allowedAppointmentActions(context, actor),
+                can_reschedule: canRescheduleAppointment(context, actor), can_edit_notes: canRescheduleAppointment(context, actor) };
+        });
+        jest.spyOn(writes, 'updateAppointmentState').mockImplementation(async (_db, row, status, dto) => {
+            current = { ...row, appointment_status: status, status_version: row.status_version + 1,
+                status_updated_at: new Date().toISOString(),
+                start_timestamp: dto?.start_date_time ? dto.start_date_time.getTime() / 1000 : row.start_timestamp };
+            return true;
+        });
+        jest.spyOn(writes, 'recordAppointmentEvent').mockResolvedValue();
+        jest.spyOn(writes, 'insertAppointment').mockResolvedValue(7);
     });
 
-    it('cancels only the authenticated patient appointment inside a transaction', async () => {
+    afterEach(() => { jest.restoreAllMocks(); jest.useRealTimers(); });
+
+    it('cancels inside a transaction without deleting appointment history and records one audit event', async () => {
         await expect(service.deleteAppointment(7, 42)).resolves.toEqual({ message: expect.any(String) });
-        expect(db.inTx).toHaveBeenCalledTimes(1);
-        expect(db.query).toHaveBeenCalledWith(expect.stringContaining('a.patient_id = ? FOR UPDATE'), [7, 42]);
-        expect(db.execute).toHaveBeenCalledWith(expect.stringContaining('DELETE FROM appointments'), [7, 42]);
+        expect(current?.appointment_status).toBe('cancelled');
+        expect(writes.recordAppointmentEvent).toHaveBeenCalledWith(db, 7, 'scheduled', 'cancelled', 'cancel', 42, 1);
+        await service.deleteAppointment(7, 42);
+        expect(writes.recordAppointmentEvent).toHaveBeenCalledTimes(1);
+        expect(db.execute).not.toHaveBeenCalled();
     });
 
-    it('does not reveal or delete another patient appointment', async () => {
-        owned = undefined;
+    it('does not reveal or modify another patient appointment', async () => {
         await expect(service.deleteAppointment(7, 99)).rejects.toBeInstanceOf(NotFoundException);
         await expect(service.updateAppointment(7, 99, { appointment_description: 'changed' })).rejects.toBeInstanceOf(NotFoundException);
-        expect(db.execute).not.toHaveBeenCalled();
+        await expect(service.performAction(7, 99, { action: 'call', expected_version: 0 })).rejects.toBeInstanceOf(NotFoundException);
+        expect(writes.updateAppointmentState).not.toHaveBeenCalled();
     });
 
-    it('preserves past appointments instead of deleting their history', async () => {
-        owned = { appointment_id: 7, start_timestamp: 1 };
+    it('preserves legacy past appointments without claiming attendance or deleting them', async () => {
+        current!.start_timestamp = 1;
         await expect(service.deleteAppointment(7, 42)).rejects.toBeInstanceOf(BadRequestException);
-        expect(db.execute).not.toHaveBeenCalled();
+        await expect(service.updateAppointment(7, 42, { appointment_description: 'changed' })).rejects.toBeInstanceOf(BadRequestException);
+        expect(writes.updateAppointmentState).not.toHaveBeenCalled();
     });
 
-    it('updates notes with bound parameters and preserves the appointment date', async () => {
+    it('keeps notes and audit updates inside the same transaction and uses the observed version', async () => {
         const notes = "x', patient_id=99 --";
-        await service.updateAppointment(7, 42, { appointment_description: notes });
-        expect(db.execute).toHaveBeenCalledWith(
-            'UPDATE appointments SET appointment_description = ? WHERE appointment_id = ? AND patient_id = ?',
-            [notes, 7, 42],
-        );
+        await service.updateAppointment(7, 42, { appointment_description: notes, expected_version: 0 });
+        expect(writes.updateAppointmentState).toHaveBeenCalledWith(db, expect.objectContaining({ status_version: 0 }), 'scheduled',
+            { appointment_description: notes, expected_version: 0 });
+        expect(writes.recordAppointmentEvent).toHaveBeenCalledWith(db, 7, 'scheduled', 'scheduled', 'update_notes', 42, 1);
     });
 
     it('rejects incomplete dates, invalid duration and empty updates', async () => {
         await expect(service.updateAppointment(7, 42, {})).rejects.toBeInstanceOf(BadRequestException);
         await expect(service.updateAppointment(7, 42, { start_date_time: start })).rejects.toBeInstanceOf(BadRequestException);
-        await expect(service.updateAppointment(7, 42, { start_date_time: start, end_date_time: new Date(start.getTime() + 60_000) }))
-            .rejects.toBeInstanceOf(BadRequestException);
-        expect(db.execute).not.toHaveBeenCalled();
+        await expect(service.updateAppointment(7, 42, { start_date_time: start, end_date_time: new Date(start.getTime() + 60_000) })).rejects.toBeInstanceOf(BadRequestException);
+        expect(writes.updateAppointmentState).not.toHaveBeenCalled();
     });
 
-    it('reschedules the same appointment ID, excludes its current slot and writes the absolute instant', async () => {
+    it('reschedules the same ID, excludes its slot and resets confirmation with an audited version', async () => {
+        current!.appointment_status = 'confirmed';
+        const available = jest.spyOn(service, 'isDoctorAvailable').mockResolvedValue(true);
         jest.spyOn(service, 'isClinicAvailable').mockResolvedValue(true);
-        await service.updateAppointment(7, 42, { start_date_time: start, end_date_time: end });
-        expect(db.query.mock.calls.some(([sql, params]) => sql.includes('a.appointment_id <> ?') && params.at(-1) === 7)).toBe(true);
-        expect(db.execute).toHaveBeenCalledWith(
-            'UPDATE appointments SET scheduled_time_date = FROM_UNIXTIME(?) WHERE appointment_id = ? AND patient_id = ?',
-            [start.getTime() / 1000, 7, 42],
-        );
+        await service.updateAppointment(7, 42, { start_date_time: start, end_date_time: end, expected_version: 0 });
+        expect(available).toHaveBeenCalledWith(3, 2, start, end, 7, db);
+        expect(current?.appointment_id).toBe(7);
+        expect(current?.appointment_status).toBe('scheduled');
+        expect(writes.recordAppointmentEvent).toHaveBeenCalledWith(db, 7, 'confirmed', 'scheduled', 'reschedule', 42, 1);
+        expect(db.query.mock.calls[0][0]).toContain('FROM users WHERE user_id = ? FOR UPDATE');
+        expect(db.query.mock.invocationCallOrder[0]).toBeLessThan((reads.getPatientAppointmentForUpdate as jest.Mock).mock.invocationCallOrder[0]);
     });
 
-    it('locks the doctor before availability checks for both scheduling and rescheduling', async () => {
+    it('locks the doctor before scheduling and records the initial scheduled event', async () => {
         jest.spyOn(service, 'isClinicAvailable').mockResolvedValue(true);
         await service.createAppointment({ clinic_id: 2, doctor_id: 3, start_date_time: start, end_date_time: end }, 42);
-        const queries = db.query.mock.calls.map(([sql]) => sql as string);
-        expect(queries[0]).toContain('FROM users WHERE user_id = ? FOR UPDATE');
-        expect(queries.findIndex(sql => sql.includes('FROM appointments'))).toBeGreaterThan(0);
-        expect(db.inTx).toHaveBeenCalledTimes(1);
+        expect(db.query.mock.calls[0][0]).toContain('FROM users WHERE user_id = ? FOR UPDATE');
+        expect(writes.recordAppointmentEvent).toHaveBeenCalledWith(db, 7, null, 'scheduled', 'schedule', 42, 0);
     });
 
-    it('rejects an occupied slot without modifying the appointment', async () => {
+    it('rejects scheduling an unassigned doctor or a past instant before creating records', async () => {
+        (clinics.getRoleByIds as jest.Mock).mockResolvedValue(null);
+        await expect(service.createAppointment({ clinic_id: 2, doctor_id: 3, start_date_time: start, end_date_time: end }, 42)).rejects.toBeInstanceOf(BadRequestException);
+        await expect(service.createAppointment({ clinic_id: 2, doctor_id: 3, start_date_time: new Date(0), end_date_time: end }, 42)).rejects.toBeInstanceOf(BadRequestException);
+        expect(writes.insertAppointment).not.toHaveBeenCalled();
+    });
+
+    it('rejects occupied slots, terminal edits and past rescheduling', async () => {
         jest.spyOn(service, 'isDoctorAvailable').mockResolvedValue(false);
-        await expect(service.updateAppointment(7, 42, { start_date_time: start, end_date_time: end }))
-            .rejects.toBeInstanceOf(ConflictException);
-        expect(db.execute).not.toHaveBeenCalled();
+        await expect(service.updateAppointment(7, 42, { start_date_time: start, end_date_time: end })).rejects.toBeInstanceOf(ConflictException);
+        current!.appointment_status = 'completed';
+        await expect(service.updateAppointment(7, 42, { appointment_description: 'changed' })).rejects.toBeInstanceOf(BadRequestException);
+        current!.appointment_status = 'scheduled';
+        await expect(service.updateAppointment(7, 42, { start_date_time: new Date(0), end_date_time: new Date(1800000) })).rejects.toBeInstanceOf(BadRequestException);
+        expect(writes.updateAppointmentState).not.toHaveBeenCalled();
     });
 
-    it('rejects rescheduling an attended date or a date in the past', async () => {
-        await expect(service.updateAppointment(7, 42, { start_date_time: new Date(0), end_date_time: new Date(1800000) }))
-            .rejects.toBeInstanceOf(BadRequestException);
-        expect(db.execute).not.toHaveBeenCalled();
+    it('rejects stale versions before applying an action or editing notes', async () => {
+        current!.status_version = 2;
+        await expect(service.performAction(7, 42, { action: 'confirm', expected_version: 0 })).rejects.toBeInstanceOf(ConflictException);
+        await expect(service.updateAppointment(7, 42, { appointment_description: 'changed', expected_version: 0 })).rejects.toBeInstanceOf(ConflictException);
+        expect(writes.updateAppointmentState).not.toHaveBeenCalled();
+        expect(writes.recordAppointmentEvent).not.toHaveBeenCalled();
     });
+
+    it('returns authoritative next actions and prevents two consultations for the same doctor', async () => {
+        const called = await service.performAction(7, 3, { action: 'call', expected_version: 0 });
+        expect(called).toEqual(expect.objectContaining({ appointment_status: 'called', status_version: 1, allowed_actions: ['start'], can_reschedule: false }));
+        anotherConsultation = true;
+        await expect(service.performAction(7, 3, { action: 'start', expected_version: 1 })).rejects.toBeInstanceOf(ConflictException);
+        expect(current?.appointment_status).toBe('called');
+        anotherConsultation = false;
+        await service.performAction(7, 3, { action: 'start', expected_version: 1 });
+        expect(current?.appointment_status).toBe('in_progress');
+        await service.performAction(7, 3, { action: 'complete', expected_version: 2 });
+        expect(current?.appointment_status).toBe('completed');
+        expect(writes.recordAppointmentEvent).toHaveBeenCalledTimes(3);
+    });
+
+    it('authorizes reception by the requested clinic and validates calendar dates before reading data', async () => {
+        await expect(service.getClinicAppointments(2, 99, '2030-02-30')).rejects.toBeInstanceOf(BadRequestException);
+        await expect(service.getClinicAppointments(2, 99, '2030-11-25')).rejects.toBeInstanceOf(NotFoundException);
+        actorRole = Roles.Employee;
+        jest.spyOn(reads, 'getClinicAppointmentsForDay').mockResolvedValue([]);
+        await expect(service.getClinicAppointments(2, 99, '2030-11-25')).resolves.toEqual([]);
+        expect(reads.getClinicAppointmentsForDay).toHaveBeenCalledWith(db, 2, 99, '2030-11-25');
+    });
+    it('keeps Friday evening in Colombia available when the UTC date is Saturday', async () => {
+        await expect(service.isClinicAvailable(2, new Date('2030-11-29T20:00:00-05:00'))).resolves.toBe(true);
+    });
+
+    it('keeps Sunday evening in Colombia unavailable when the UTC date is Monday', async () => {
+        await expect(service.isClinicAvailable(2, new Date('2030-12-01T20:00:00-05:00'))).resolves.toBe(false);
+    });
+
 });

@@ -1,4 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { APPOINTMENT_ACTIONS, APPOINTMENT_STATUSES } from '../appointments/appointment-workflow';
+import type { AppointmentAction, AppointmentStatus } from '../appointments/appointment-workflow';
 
 export class SpecialtyEntity {
   @ApiProperty({ description: 'Unique specialty identifier.', example: 3 })
@@ -79,9 +81,35 @@ export class PublicDoctorEntity {
   specialties: SpecialtyEntity[];
 }
 
-export class AppointmentEntity {
-  @ApiProperty({ description: 'Unique appointment identifier.', example: 101 })
+export class AppointmentStateEntity {
+  @ApiProperty({ example: 101 })
   appointment_id: number;
+
+  @ApiProperty({ enum: APPOINTMENT_STATUSES })
+  appointment_status: AppointmentStatus;
+
+  @ApiProperty({ minimum: 0, example: 2 })
+  status_version: number;
+
+  @ApiProperty({ type: String, format: 'date-time', nullable: true })
+  status_updated_at: string | null;
+
+  @ApiProperty({ enum: APPOINTMENT_ACTIONS, isArray: true })
+  allowed_actions: AppointmentAction[];
+
+  @ApiProperty({ description: 'Whether the authenticated patient may reschedule this appointment.' })
+  can_reschedule: boolean;
+
+  @ApiProperty({ description: 'Whether the authenticated patient may edit appointment notes.' })
+  can_edit_notes: boolean;
+}
+
+export class AppointmentEntity extends AppointmentStateEntity {
+  @ApiProperty({ example: 44 })
+  patient_id: number;
+
+  @ApiProperty({ example: 42 })
+  doctor_id: number;
 
   @ApiProperty({ description: 'Clinic identifier for the appointment.', example: 12 })
   clinic_id: number;

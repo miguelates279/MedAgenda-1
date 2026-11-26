@@ -12,12 +12,12 @@ describe('Absolute appointment instants for device reminders', () => {
         }]) } as unknown as Db;
         const result = await getAppointmentsByPatientId(db, 42);
         expect(result[0].doctor_id).toBe(3);
-        expect(db.query).toHaveBeenCalledWith(expect.stringContaining('a.doctor_id'), [42]);
+        expect(db.query).toHaveBeenCalledWith(expect.stringContaining('a.doctor_id'), [42, 42, 42]);
         expect(result[0].start_date_time).toBe('2030-11-25T14:00:00.000Z');
         expect(result[0].end_date_time).toBe('2030-11-25T14:30:00.000Z');
         expect(result[0]).not.toHaveProperty('starts_at_seconds');
         expect(result[0]).not.toHaveProperty('duration_minutes');
-        expect(db.query).toHaveBeenCalledWith(expect.stringContaining('UNIX_TIMESTAMP'), [42]);
+        expect(db.query).toHaveBeenCalledWith(expect.stringContaining('UNIX_TIMESTAMP'), [42, 42, 42]);
     });
 
     it('stores the requested instant rather than interpreting a UTC text as a local SQL time', async () => {

@@ -8,7 +8,10 @@ import { JwtAuthGuard } from '../auth/jwt/jwt-auth.guard';
 describe('Authenticated appointment HTTP routes', () => {
     let app: INestApplication;
     const service = { updateAppointment: jest.fn(async () => ({ message: 'updated' })),
-        deleteAppointment: jest.fn(async () => ({ message: 'cancelled' })) };
+        deleteAppointment: jest.fn(async () => ({ message: 'cancelled' })),
+        performAction: jest.fn(async () => ({ appointment_id: 7, appointment_status: 'confirmed', status_version: 1 })),
+        getDispatchClinics: jest.fn(async () => []), getClinicAppointments: jest.fn(async () => []),
+        getAppointment: jest.fn(async () => ({ appointment_id: 7 })) };
 
     beforeAll(async () => {
         const module = await Test.createTestingModule({
@@ -47,4 +50,25 @@ describe('Authenticated appointment HTTP routes', () => {
         await request(app.getHttpServer()).delete('/appointments/not-a-number').expect(400);
         expect(service.deleteAppointment).not.toHaveBeenCalled();
     });
+    it('derives action identity from the authenticated session and requires the observed version', async () => {
+        await request(app.getHttpServer()).post('/appointments/7/actions').send({ action: 'confirm', expected_version: 0 }).expect(200);
+        expect(service.performAction).toHaveBeenCalledWith(7, 42, expect.objectContaining({ action: 'confirm', expected_version: 0 }));
+    });
+    it('rejects unknown actions, missing or invalid versions and injected actor identity', async () => {
+        for (const body of [{ action: 'complete' }, { action: 'made_up', expected_version: 0 },
+            { action: 'confirm', expected_version: null }, { action: 'confirm', expected_version: -1 },
+            { action: 'confirm', expected_version: 1.5 }, { action: 'confirm', expected_version: '0' },
+            { action: 'confirm', expected_version: 0, actor_user_id: 99 }]) {
+            await request(app.getHttpServer()).post('/appointments/7/actions').send(body).expect(400);
+        }
+        expect(service.performAction).not.toHaveBeenCalled();
+    });
+    it('routes dispatch discovery before the appointment identifier route', async () => {
+        await request(app.getHttpServer()).get('/appointments/dispatch-clinics').expect(200, []);
+        expect(service.getDispatchClinics).toHaveBeenCalledWith(42);
+        expect(service.getAppointment).not.toHaveBeenCalled();
+        await request(app.getHttpServer()).get('/appointments/clinic/2?date=2030-11-25').expect(200, []);
+        expect(service.getClinicAppointments).toHaveBeenCalledWith(2, 42, '2030-11-25');
+    });
+
 });

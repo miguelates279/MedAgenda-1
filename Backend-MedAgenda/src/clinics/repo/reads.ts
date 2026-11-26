@@ -65,19 +65,19 @@ export async function getUserClinics(db: Db, user_id: number): Promise<Clinic[]>
 }
 
 export async function getClinicsWithSpecialties(db: Db, specialty_id: number[]): Promise<Clinic[]> {
-    return await db.query<Clinic>('SELECT c.clinic_id, clinic_name, is_open, clinic_phone_number, clinic_city_id, clinic_address, clinic_description FROM clinics c JOIN clinic_specialties cs ON c.clinic_id = cs.clinic_id WHERE cs.specialty_id IN(?)', [specialty_id])
+    return await db.query<Clinic>('SELECT DISTINCT c.clinic_id, clinic_name, is_open, clinic_phone_number, clinic_city_id, clinic_address, clinic_description FROM clinics c JOIN clinic_specialties cs ON c.clinic_id = cs.clinic_id WHERE cs.specialty_id IN(?)', [specialty_id])
 }
 
 export async function getClinicsWithSpecialtyInCity(db: Db, specialty_id: number[], city_id: number): Promise<Clinic[]> {
-    return await db.query<Clinic>('SELECT c.clinic_id, clinic_name, is_open, clinic_phone_number, clinic_city_id, clinic_address, clinic_description FROM clinics c JOIN clinic_specialties cs ON c.clinic_id = cs.clinic_id WHERE cs.specialty_id IN(?) AND c.clinic_city_id = ?', [specialty_id, city_id]);
+    return await db.query<Clinic>('SELECT DISTINCT c.clinic_id, clinic_name, is_open, clinic_phone_number, clinic_city_id, clinic_address, clinic_description FROM clinics c JOIN clinic_specialties cs ON c.clinic_id = cs.clinic_id WHERE cs.specialty_id IN(?) AND c.clinic_city_id = ?', [specialty_id, city_id]);
 }
 
 export async function getClinicsWithSpecialtyInState(db: Db, specialty_id: number[], state_id: number): Promise<Clinic[]> {
-    return await db.query<Clinic>('SELECT c.clinic_id, clinic_name, is_open, clinic_phone_number, clinic_city_id, clinic_address, clinic_description FROM clinics c JOIN clinic_specialties cs ON c.clinic_id = cs.clinic_id JOIN cities ct ON c.clinic_city_id = ct.city_id WHERE cs.specialty_id IN(?) AND ct.state_id = ?',[specialty_id, state_id]);
+    return await db.query<Clinic>('SELECT DISTINCT c.clinic_id, clinic_name, is_open, clinic_phone_number, clinic_city_id, clinic_address, clinic_description FROM clinics c JOIN clinic_specialties cs ON c.clinic_id = cs.clinic_id JOIN cities ct ON c.clinic_city_id = ct.city_id WHERE cs.specialty_id IN(?) AND ct.state_id = ?',[specialty_id, state_id]);
 }
 
 export async function getClinicsWithSpecialtyInCountry(db: Db, specialty_id: number[], country_id: number): Promise<Clinic[]> {
-    return await db.query<Clinic>('SELECT c.clinic_id, clinic_name, is_open, clinic_phone_number, clinic_city_id, clinic_address, clinic_description FROM clinics c JOIN clinic_specialties cs ON c.clinic_id = cs.clinic_id JOIN cities ct ON c.clinic_city_id = ct.city_id JOIN states s ON ct.state_id = s.state_id WHERE cs.specialty_id IN(?) AND s.country_id = ?', [specialty_id, country_id]);
+    return await db.query<Clinic>('SELECT DISTINCT c.clinic_id, clinic_name, is_open, clinic_phone_number, clinic_city_id, clinic_address, clinic_description FROM clinics c JOIN clinic_specialties cs ON c.clinic_id = cs.clinic_id JOIN cities ct ON c.clinic_city_id = ct.city_id JOIN states s ON ct.state_id = s.state_id WHERE cs.specialty_id IN(?) AND s.country_id = ?', [specialty_id, country_id]);
 }
 
 export async function getClinicsInCity(db: Db, city_id: number): Promise<Clinic[]> {

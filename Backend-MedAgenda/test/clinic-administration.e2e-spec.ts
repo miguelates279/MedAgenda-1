@@ -5,6 +5,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { DatabaseService } from '../src/db/database.service';
 import { AppointmentsService } from '../src/appointments/appointments.service';
+import { getClinicsWithSpecialtyInState } from '../src/clinics/repo/reads';
 
 const enabled = process.env.WORKFLOW_INTEGRATION === '1';
 const databaseName = process.env.DB_NAME ?? '';
@@ -266,6 +267,24 @@ integration('Clinic administration HTTP and isolated MySQL integration', () => {
   it('blocks removing offered specialties that still have providers and rolls back clinic data', async () => {
     await put(management(), { specialty_ids: [specialty.second], clinic_description: 'Must roll back' }).expect(409);
     expect((await get(management()).expect(200)).body).toEqual(expect.objectContaining({ specialty_ids: [specialty.first, specialty.second], clinic_description: 'QA Admin description' }));
+  });
+
+  it('returns each clinic once when several offered specialties match public location filters', async () => {
+    const [location] = await db.query<{ state_id: number; country_id: number }>('SELECT s.state_id,s.country_id FROM cities c JOIN states s ON s.state_id=c.state_id WHERE c.city_id=?', [cityId]);
+    const ids = `${specialty.first},${specialty.second}`;
+    const paths = [
+      `/clinics/getAllClinicsWithSpecialty?specialty_ids=${ids}`,
+      `/clinics/getAllClinicsWithSpecialtiesInCity?specialty_ids=${ids}&city_id=${cityId}`,
+      `/clinics/getAllClinicsWithSpecialtiesInCountry?specialty_ids=${ids}&country_id=${location.country_id}`,
+    ];
+    const results: Array<Array<{ clinic_id: number }>> = [];
+    for (const path of paths) results.push((await request(app.getHttpServer()).get(path).expect(200)).body);
+    results.push(await getClinicsWithSpecialtyInState(db, [specialty.first, specialty.second], location.state_id));
+    for (const result of results) {
+      expect(result).toHaveLength(3);
+      expect(result.map((clinic: { clinic_id: number }) => clinic.clinic_id).sort((a: number, b: number) => a-b)).toEqual(Object.values(clinics).sort((a,b) => a-b));
+      expect(result.filter((clinic: { clinic_id: number }) => clinic.clinic_id === clinics.first)).toEqual([expect.objectContaining({ clinic_name: 'QA Admin first', clinic_city_id: cityId, clinic_address: 'Calle QA 1', clinic_phone_number: '+573001112233' })]);
+    }
   });
 
   it.each([null, 30])('freezes old appointment duration %s before changing rules and uses new duration only for new or moved slots', async (stored) => {

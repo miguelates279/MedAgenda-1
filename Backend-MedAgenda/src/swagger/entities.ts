@@ -102,6 +102,15 @@ export class AppointmentStateEntity {
 
   @ApiProperty({ description: 'Whether the authenticated patient may edit appointment notes.' })
   can_edit_notes: boolean;
+
+  @ApiProperty({ example: 60, description: 'Minimum advance for scheduling, cancellation and rescheduling.' })
+  minimum_advance_minutes: number;
+
+  @ApiProperty({ type: String, format: 'date-time' })
+  change_deadline: string;
+
+  @ApiProperty({ type: String, format: 'date-time' })
+  server_now: string;
 }
 
 export class AppointmentEntity extends AppointmentStateEntity {
@@ -233,4 +242,44 @@ export class CityEntity {
 
   @ApiProperty({ description: 'Name of the city.', example: 'Santa Tecla' })
   city_name: string;
+}
+
+export class AppointmentAvailabilitySlotEntity {
+  @ApiProperty({ type: String, format: 'date-time' })
+  start_date_time: string;
+
+  @ApiProperty({ type: String, format: 'date-time' })
+  end_date_time: string;
+
+  @ApiProperty({ enum: ['available', 'booked', 'break', 'past', 'too_soon', 'unavailable', 'current'] })
+  status: string;
+}
+
+export class AppointmentAvailabilityEntity {
+  @ApiProperty()
+  clinic_id: number;
+
+  @ApiProperty()
+  doctor_id: number;
+
+  @ApiProperty({ example: '2026-11-26' })
+  date: string;
+
+  @ApiProperty({ example: 'America/Bogota' })
+  time_zone: string;
+
+  @ApiProperty({ type: String, format: 'date-time' })
+  server_now: string;
+
+  @ApiProperty({ example: 60 })
+  minimum_advance_minutes: number;
+
+  @ApiProperty({ example: 30 })
+  duration_minutes: number;
+
+  @ApiProperty({ enum: ['closed', 'weekend'], nullable: true })
+  unavailable_reason: string | null;
+
+  @ApiProperty({ type: AppointmentAvailabilitySlotEntity, isArray: true })
+  slots: AppointmentAvailabilitySlotEntity[];
 }

@@ -4,8 +4,9 @@ import { DatabaseService } from '../db/database.service';
 import * as reads from './repo/reads';
 import * as writes from './repo/writes';
 import * as clinics from '../clinics/repo/reads';
+import { appointmentChangeDeadline } from './appointment-scheduling';
 import { Roles } from '../auth/role_guard/roles.enum';
-import { allowedAppointmentActions, canRescheduleAppointment } from './appointment-workflow';
+import { allowedAppointmentActions, canEditAppointmentNotes, canRescheduleAppointment } from './appointment-workflow';
 
 describe('Transactional appointment lifecycle', () => {
     const start = new Date('2030-11-25T15:00:00Z');
@@ -27,6 +28,7 @@ describe('Transactional appointment lifecycle', () => {
                 sql.includes("appointment_status = 'in_progress'") && anotherConsultation ? [{ appointment_id: 8 }] : []),
             execute: jest.fn(), inTx: jest.fn(async fn => fn(db)) };
         service = new AppointmentsService(db as unknown as DatabaseService);
+        jest.spyOn(clinics, 'getClinicSchedulingRules').mockResolvedValue([{ is_open: 1, minimum_advance_minutes: 60, clinic_opening_time: '08:00', clinic_close_time: '18:00', clinic_break_time: '12:00', clinic_break_duration: '60', clinic_average_appointment_time: '30' }]);
         jest.spyOn(reads, 'getAppointmentDoctorId').mockImplementation(async (_db, _id, patientId) =>
             current && (patientId === undefined || patientId === current.patient_id) ? current.doctor_id : undefined);
         jest.spyOn(reads, 'getPatientAppointmentForUpdate').mockImplementation(async () => current);
@@ -39,7 +41,8 @@ describe('Transactional appointment lifecycle', () => {
             return { ...context, clinic_name: 'Centro', first_name: 'Ana', first_last_name: 'Ruiz', second_last_name: '',
                 end_date_time: new Date((current.start_timestamp + 1800) * 1000).toISOString(),
                 status_updated_at: current.status_updated_at, allowed_actions: allowedAppointmentActions(context, actor),
-                can_reschedule: canRescheduleAppointment(context, actor), can_edit_notes: canRescheduleAppointment(context, actor) };
+                can_reschedule: canRescheduleAppointment(context, actor), can_edit_notes: canEditAppointmentNotes(context, actor), minimum_advance_minutes: 60,
+                change_deadline: appointmentChangeDeadline(context.start_date_time), server_now: new Date().toISOString() };
         });
         jest.spyOn(writes, 'updateAppointmentState').mockImplementation(async (_db, row, status, dto) => {
             current = { ...row, appointment_status: status, status_version: row.status_version + 1,
@@ -164,6 +167,47 @@ describe('Transactional appointment lifecycle', () => {
 
     it('keeps Sunday evening in Colombia unavailable when the UTC date is Monday', async () => {
         await expect(service.isClinicAvailable(2, new Date('2030-12-01T20:00:00-05:00'))).resolves.toBe(false);
+    });
+
+    it('keeps future notes editable inside the one hour cutoff but rejects time changes and cancellation for everyone', async () => {
+        jest.setSystemTime(new Date('2030-11-25T14:00:00.001Z'));
+        await service.updateAppointment(7, 42, { appointment_description: 'new notes' });
+        await expect(service.updateAppointment(7, 42, { start_date_time: start, end_date_time: end })).rejects.toBeInstanceOf(BadRequestException);
+        await expect(service.deleteAppointment(7, 42)).rejects.toBeInstanceOf(BadRequestException);
+        actorRole = Roles.Employee;
+        await expect(service.performAction(7, 99, { action: 'cancel', expected_version: 1 })).rejects.toBeInstanceOf(BadRequestException);
+        expect(writes.recordAppointmentEvent).toHaveBeenCalledTimes(1);
+    });
+
+    it('revalidates the new slot and original deadline after waiting for the doctor lock', async () => {
+        const originalQuery = db.query.getMockImplementation()!;
+        db.query.mockImplementation(async (...args) => {
+            if (args[0].includes('FROM users')) jest.setSystemTime(new Date('2030-11-25T14:00:00.001Z'));
+            return originalQuery(...args);
+        });
+        await expect(service.createAppointment({ clinic_id: 2, doctor_id: 3, start_date_time: start, end_date_time: end }, 42)).rejects.toBeInstanceOf(BadRequestException);
+        await expect(service.updateAppointment(7, 42, { start_date_time: new Date('2030-11-25T16:00:00Z'), end_date_time: new Date('2030-11-25T16:30:00Z') })).rejects.toBeInstanceOf(BadRequestException);
+        expect(writes.insertAppointment).not.toHaveBeenCalled();
+        expect(writes.updateAppointmentState).not.toHaveBeenCalled();
+    });
+
+    it('offers patient-owned current slots without accepting a client exclusion or exposing another patient appointment', async () => {
+        jest.spyOn(reads, 'getDoctorBusyIntervals').mockResolvedValue([]);
+        const result = await service.getReschedulingAvailability(7, 42, '2030-11-25');
+        expect(result.slots.find(slot => slot.start_date_time === start.toISOString())?.status).toBe('current');
+        expect(reads.getDoctorBusyIntervals).toHaveBeenCalledWith(db, 3, 2, Date.parse('2030-11-25T05:00:00Z'), Date.parse('2030-11-26T05:00:00Z'), 7);
+        await expect(service.getReschedulingAvailability(7, 99, '2030-11-25')).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('rejects removed doctor membership on reschedule, invalid clinic configuration and closed day writes', async () => {
+        (clinics.getRoleByIds as jest.Mock).mockResolvedValue(null);
+        await expect(service.updateAppointment(7, 42, { start_date_time: start, end_date_time: end })).rejects.toBeInstanceOf(BadRequestException);
+        (clinics.getRoleByIds as jest.Mock).mockResolvedValue({ role_within_clinic: Roles.Doctor });
+        (clinics.getClinicSchedulingRules as jest.Mock).mockResolvedValue([{ is_open: 1, clinic_opening_time: null }]);
+        await expect(service.getAvailability(2, 3, '2030-11-25')).rejects.toThrow('configuración');
+        (clinics.getClinicSchedulingRules as jest.Mock).mockResolvedValue([{ is_open: 0, clinic_opening_time: '08:00', clinic_close_time: '18:00', clinic_break_time: '12:00', clinic_break_duration: '60', clinic_average_appointment_time: '30' }]);
+        expect(await service.getAvailability(2, 3, '2030-11-25')).toMatchObject({ unavailable_reason: 'closed', slots: [] });
+        await expect(service.createAppointment({ clinic_id: 2, doctor_id: 3, start_date_time: start, end_date_time: end }, 42)).rejects.toBeInstanceOf(BadRequestException);
     });
 
 });

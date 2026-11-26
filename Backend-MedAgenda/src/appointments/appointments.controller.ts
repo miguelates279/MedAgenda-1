@@ -2,8 +2,8 @@ import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Post, Put
 import { ApiBadRequestResponse, ApiBearerAuth, ApiBody, ApiConflictResponse, ApiCreatedResponse, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiParam, ApiQuery, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt/jwt-auth.guard';
 import { AppointmentsService } from './appointments.service';
-import { AppointmentActionDto, CreateAppointmentDto, UpdateAppointmentDto } from './dto/appointments.dto';
-import { AppointmentEntity, AppointmentStateEntity } from '../swagger/entities';
+import { AppointmentActionDto, AppointmentAvailabilityDateDto, CreateAppointmentDto, UpdateAppointmentDto } from './dto/appointments.dto';
+import { AppointmentAvailabilityEntity, AppointmentEntity, AppointmentStateEntity } from '../swagger/entities';
 
 @ApiTags('Appointments')
 @UseGuards(JwtAuthGuard)
@@ -49,6 +49,16 @@ export class AppointmentsController {
         return this.appointmentService.getClinicAppointments(clinicId, req.user.id, date);
     }
 
+    @Get(':id/availability')
+    @ApiOperation({ summary: 'Get available rescheduling slots for an appointment owned by the authenticated patient.' })
+    @ApiQuery({ name: 'date', example: '2026-11-26', required: true })
+    @ApiOkResponse({ type: AppointmentAvailabilityEntity })
+    @ApiBadRequestResponse({ description: 'Invalid date, clinic configuration or rescheduling deadline.' })
+    @ApiNotFoundResponse({ description: 'Appointment not found or not owned by the patient.' })
+    async getReschedulingAvailability(@Param('id', ParseIntPipe) id: number, @Query() query: AppointmentAvailabilityDateDto, @Req() req) {
+        return this.appointmentService.getReschedulingAvailability(id, req.user.id, query.date);
+    }
+
     @Get(':id')
     @ApiOperation({ summary: 'Get an appointment visible to its patient, assigned doctor or clinic staff.' })
     @ApiOkResponse({ type: AppointmentEntity })
@@ -86,7 +96,7 @@ export class AppointmentsController {
     @ApiOperation({ summary: 'Cancel a future appointment owned by the authenticated patient.' })
     @ApiParam({ name: 'id', description: 'ID of the appointment to cancel', type: Number })
     @ApiOkResponse({ description: 'Appointment cancelled and slot released.' })
-    @ApiBadRequestResponse({ description: 'Past appointments cannot be cancelled.' })
+    @ApiBadRequestResponse({ description: 'Cancellation requires at least one hour before the appointment starts.' })
     @ApiNotFoundResponse({ description: 'No appointment owned by this patient was found.' })
     @ApiUnauthorizedResponse({ description: 'Invalid or missing authentication token.' })
     async cancelAppointment(@Param('id', ParseIntPipe) id: number, @Req() req) {

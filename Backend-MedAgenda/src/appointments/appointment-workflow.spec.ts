@@ -1,4 +1,4 @@
-import { allowedAppointmentActions, AppointmentWorkflowContext, canRescheduleAppointment, clinicDate } from './appointment-workflow';
+import { allowedAppointmentActions, AppointmentWorkflowContext, canEditAppointmentNotes, canRescheduleAppointment, clinicDate } from './appointment-workflow';
 
 describe('Appointment workflow policy', () => {
     const now = new Date('2030-11-25T14:00:00Z');
@@ -70,4 +70,19 @@ describe('Appointment workflow policy', () => {
         }
         expect(canRescheduleAppointment({ ...appointment, appointment_status: 'confirmed' }, 42, now)).toBe(true);
     });
+    it('uses the inclusive one hour cutoff for patient and all reception roles while retaining note editing until start', () => {
+        const boundary = new Date('2030-11-25T14:00:00Z');
+        const inside = new Date(boundary.getTime() + 1);
+        expect(canRescheduleAppointment(appointment, 42, boundary)).toBe(true);
+        expect(canRescheduleAppointment(appointment, 42, inside)).toBe(false);
+        expect(canEditAppointmentNotes(appointment, 42, inside)).toBe(true);
+        expect(canEditAppointmentNotes(appointment, 42, new Date(appointment.start_date_time))).toBe(false);
+        for (const role of [null, 'Owner', 'Admin', 'Employee'] as const) {
+            const actor = role === null ? 42 : 99;
+            expect(allowedAppointmentActions({ ...appointment, actor_role: role }, actor, boundary)).toContain('cancel');
+            expect(allowedAppointmentActions({ ...appointment, actor_role: role }, actor, inside)).not.toContain('cancel');
+        }
+        expect(allowedAppointmentActions(appointment, 42, inside)).toEqual(['confirm', 'check_in']);
+    });
+
 });

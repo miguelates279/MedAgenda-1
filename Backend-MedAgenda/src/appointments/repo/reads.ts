@@ -1,5 +1,6 @@
+import { appointmentChangeDeadline, BusyInterval, MINIMUM_APPOINTMENT_ADVANCE_MINUTES } from '../appointment-scheduling';
 import { Db } from '../../db/types/types';
-import { allowedAppointmentActions, AppointmentRole, AppointmentStateView, AppointmentStatus, canRescheduleAppointment } from '../appointment-workflow';
+import { allowedAppointmentActions, AppointmentRole, AppointmentStateView, AppointmentStatus, canEditAppointmentNotes, canRescheduleAppointment } from '../appointment-workflow';
 
 export type Appointment = AppointmentStateView & {
     clinic_id: number;
@@ -25,7 +26,7 @@ export type AppointmentSlot = {
     end_date_time: string;
 };
 
-type AppointmentRow = Omit<Appointment, 'start_date_time' | 'end_date_time' | 'allowed_actions' | 'can_reschedule' | 'can_edit_notes'> & {
+type AppointmentRow = Omit<Appointment, 'start_date_time' | 'end_date_time' | 'allowed_actions' | 'can_reschedule' | 'can_edit_notes' | 'minimum_advance_minutes' | 'change_deadline' | 'server_now'> & {
     starts_at_seconds: number;
     duration_minutes: number | string;
     updated_at_seconds: number | null;
@@ -40,7 +41,7 @@ const APPOINTMENT_COLUMNS = `a.appointment_id, a.clinic_id, a.doctor_id, a.patie
     CASE WHEN c.clinic_owner = ? THEN 'Owner' ELSE cm.role_within_clinic END AS actor_role`;
 
 function mapAppointments(rows: AppointmentRow[], actorId: number): Appointment[] {
-    const now = new Date();
+    const now = new Date(Date.now());
     return rows.map(({ starts_at_seconds, duration_minutes, updated_at_seconds, actor_role, ...row }) => {
         const appointment = {
             ...row,
@@ -51,7 +52,8 @@ function mapAppointments(rows: AppointmentRow[], actorId: number): Appointment[]
         };
         const context = { ...appointment, actor_role };
         return { ...appointment, allowed_actions: allowedAppointmentActions(context, actorId, now),
-            can_reschedule: canRescheduleAppointment(context, actorId, now), can_edit_notes: canRescheduleAppointment(context, actorId, now) };
+            can_reschedule: canRescheduleAppointment(context, actorId, now), can_edit_notes: canEditAppointmentNotes(context, actorId, now),
+            minimum_advance_minutes: MINIMUM_APPOINTMENT_ADVANCE_MINUTES, change_deadline: appointmentChangeDeadline(appointment.start_date_time), server_now: now.toISOString() };
     });
 }
 
@@ -162,4 +164,24 @@ export async function getDispatchClinics(db: Db, actorId: number): Promise<Dispa
          WHERE c.clinic_owner = ? OR cm.role_within_clinic IN ('Admin', 'Employee')
          ORDER BY c.clinic_name, c.clinic_id`, [actorId, actorId, actorId],
     );
+}
+
+export async function getDoctorBusyIntervals(db: Db, doctorId: number, clinicId: number, start: number, end: number, excludeAppointmentId?: number): Promise<BusyInterval[]> {
+    const params = [doctorId, end / 1000, start / 1000];
+    if (excludeAppointmentId !== undefined) params.push(excludeAppointmentId);
+    const appointments = await db.query<{ starts_at: number; ends_at: number }>(
+        `SELECT UNIX_TIMESTAMP(a.scheduled_time_date) AS starts_at,
+         UNIX_TIMESTAMP(DATE_ADD(a.scheduled_time_date, INTERVAL c.clinic_average_appointment_time MINUTE)) AS ends_at
+         FROM appointments a JOIN clinics c ON c.clinic_id = a.clinic_id
+         WHERE a.doctor_id = ? AND a.appointment_status NOT IN ('cancelled', 'no_show')
+         AND a.scheduled_time_date < FROM_UNIXTIME(?)
+         AND DATE_ADD(a.scheduled_time_date, INTERVAL c.clinic_average_appointment_time MINUTE) > FROM_UNIXTIME(?)
+         ${excludeAppointmentId === undefined ? '' : 'AND a.appointment_id <> ?'}`, params,
+    );
+    const absences = await db.query<{ starts_at: number; ends_at: number }>(
+        `SELECT UNIX_TIMESTAMP(start_date_time) AS starts_at, UNIX_TIMESTAMP(end_date_time) AS ends_at FROM absences
+         WHERE doctor_id = ? AND clinic_id = ? AND start_date_time < FROM_UNIXTIME(?) AND end_date_time > FROM_UNIXTIME(?)`,
+        [doctorId, clinicId, end / 1000, start / 1000],
+    );
+    return [...appointments, ...absences].map(row => ({ start: Number(row.starts_at) * 1000, end: Number(row.ends_at) * 1000 }));
 }

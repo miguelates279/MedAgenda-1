@@ -1,3 +1,5 @@
+import { hasMinimumAppointmentAdvance } from './appointment-scheduling';
+
 export const APPOINTMENT_STATUSES = ['scheduled', 'confirmed', 'waiting', 'called', 'in_progress', 'completed', 'cancelled', 'no_show'] as const;
 export const APPOINTMENT_ACTIONS = ['confirm', 'check_in', 'call', 'start', 'complete', 'no_show', 'cancel'] as const;
 export type AppointmentStatus = typeof APPOINTMENT_STATUSES[number];
@@ -20,6 +22,9 @@ export interface AppointmentStateView {
     allowed_actions: AppointmentAction[];
     can_reschedule: boolean;
     can_edit_notes: boolean;
+    minimum_advance_minutes: number;
+    change_deadline: string;
+    server_now: string;
 }
 
 const PRECONSULT_STATUSES: readonly AppointmentStatus[] = ['scheduled', 'confirmed', 'waiting', 'called'];
@@ -28,13 +33,18 @@ export function clinicDate(value: Date): string {
     return new Date(value.getTime() - 5 * 60 * 60_000).toISOString().slice(0, 10);
 }
 
-export function canRescheduleAppointment(appointment: AppointmentWorkflowContext, actorId: number, now = new Date()): boolean {
+export function canEditAppointmentNotes(appointment: AppointmentWorkflowContext, actorId: number, now = new Date(Date.now())): boolean {
     return appointment.patient_id === actorId &&
         ['scheduled', 'confirmed'].includes(appointment.appointment_status) &&
         Date.parse(appointment.start_date_time) > now.getTime();
 }
 
-export function allowedAppointmentActions(appointment: AppointmentWorkflowContext, actorId: number, now = new Date()): AppointmentAction[] {
+export function canRescheduleAppointment(appointment: AppointmentWorkflowContext, actorId: number, now = new Date(Date.now())): boolean {
+    return canEditAppointmentNotes(appointment, actorId, now) &&
+        hasMinimumAppointmentAdvance(Date.parse(appointment.start_date_time), now.getTime());
+}
+
+export function allowedAppointmentActions(appointment: AppointmentWorkflowContext, actorId: number, now = new Date(Date.now())): AppointmentAction[] {
     const start = new Date(appointment.start_date_time);
     if (!Number.isFinite(start.getTime())) return [];
     const patient = appointment.patient_id === actorId;
@@ -50,7 +60,8 @@ export function allowedAppointmentActions(appointment: AppointmentWorkflowContex
     if (['waiting', 'called'].includes(status) && today && doctor) actions.push('start');
     if (status === 'in_progress' && doctor) actions.push('complete');
     if (['scheduled', 'confirmed', 'called'].includes(status) && today && !future && (doctor || staff)) actions.push('no_show');
-    if (PRECONSULT_STATUSES.includes(status) && ((patient && future) || (staff && clinicDate(start) >= clinicDate(now)))) actions.push('cancel');
+    if (PRECONSULT_STATUSES.includes(status) && (patient || staff) &&
+        hasMinimumAppointmentAdvance(start.getTime(), now.getTime())) actions.push('cancel');
     return actions;
 }
 

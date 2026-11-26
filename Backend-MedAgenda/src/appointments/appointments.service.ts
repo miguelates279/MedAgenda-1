@@ -3,8 +3,9 @@ import { DatabaseService } from '../db/database.service';
 import { AppointmentActionDto, CreateAppointmentDto, UpdateAppointmentDto } from './dto/appointments.dto';
 import * as AppointmentWrites from './repo/writes';
 import * as AppointmentReads from './repo/reads';
-import { getRoleByIds } from '../clinics/repo/reads';
-import { allowedAppointmentActions, AppointmentAction, AppointmentRole, AppointmentStateView, canRescheduleAppointment, clinicDate, statusForAppointmentAction } from './appointment-workflow';
+import { getClinicSchedulingRules, getRoleByIds } from '../clinics/repo/reads';
+import { allowedAppointmentActions, AppointmentAction, AppointmentRole, AppointmentStateView, canEditAppointmentNotes, canRescheduleAppointment, clinicDate, statusForAppointmentAction } from './appointment-workflow';
+import { APPOINTMENT_TIME_ZONE, AppointmentAvailability, ClinicSchedulingPolicy, clinicDayUnavailableReason, createAvailabilitySlots, isStoredAppointmentInstant, MINIMUM_APPOINTMENT_ADVANCE_MINUTES, parseClinicSchedulingPolicy, validateAppointmentSlot, validateSchedulingDate } from './appointment-scheduling';
 import type { Db } from '../db/types/types';
 
 @Injectable()
@@ -13,24 +14,59 @@ export class AppointmentsService {
 
     async createAppointment(dto: CreateAppointmentDto, requesterId: number): Promise<void> {
         if (!requesterId) throw new BadRequestException('Missing critical parameter requester_id.');
-        if (dto.start_date_time.getTime() <= Date.now() || dto.start_date_time >= dto.end_date_time) {
-            throw new BadRequestException('La cita debe tener un horario futuro válido.');
-        }
         await this.db.inTx(async tx => {
             await this.lockDoctor(tx, dto.doctor_id);
-            const doctorRole = await getRoleByIds(tx, dto.clinic_id, dto.doctor_id);
-            if (!doctorRole || !['Owner', 'Admin', 'Doctor'].includes(doctorRole.role_within_clinic)) {
-                throw new BadRequestException('El médico no pertenece a esta clínica.');
-            }
-            if (!await this.isDoctorAvailable(dto.doctor_id, dto.clinic_id, dto.start_date_time, dto.end_date_time, undefined, tx)) {
-                throw new ConflictException('El médico no está disponible en este horario.');
-            }
-            if (!await this.isClinicAvailable(dto.clinic_id, dto.start_date_time, tx)) {
-                throw new ConflictException('La clínica no está disponible en este horario.');
-            }
+            const now = new Date(Date.now());
+            await this.validateScheduling(tx, dto.clinic_id, dto.doctor_id, dto.start_date_time, dto.end_date_time, now);
             const appointmentId = await AppointmentWrites.insertAppointment(tx, dto, requesterId);
             await AppointmentWrites.recordAppointmentEvent(tx, appointmentId, null, 'scheduled', 'schedule', requesterId, 0);
         });
+    }
+
+    async getAvailability(clinicId: number, doctorId: number, date: string): Promise<AppointmentAvailability> {
+        const now = new Date(Date.now());
+        return this.buildAvailability(clinicId, doctorId, date, now);
+    }
+
+    async getReschedulingAvailability(id: number, patientId: number, date: string): Promise<AppointmentAvailability> {
+        const appointment = await AppointmentReads.getAppointmentByIdForActor(this.db, id, patientId);
+        if (!appointment || appointment.patient_id !== patientId) throw new NotFoundException('Cita no encontrada.');
+        const now = new Date(Date.now());
+        if (!canRescheduleAppointment({ ...appointment, actor_role: null }, patientId, now)) {
+            throw new BadRequestException('Solo puedes reprogramar citas programadas o confirmadas con al menos una hora de anticipación.');
+        }
+        return this.buildAvailability(appointment.clinic_id, appointment.doctor_id, date, now, appointment);
+    }
+
+    private async buildAvailability(clinicId: number, doctorId: number, date: string, now: Date, current?: AppointmentReads.Appointment): Promise<AppointmentAvailability> {
+        const midnight = validateSchedulingDate(date);
+        const policy = await this.getSchedulingPolicy(this.db, clinicId, doctorId);
+        const unavailableReason = clinicDayUnavailableReason(policy, date);
+        const outsideStorageRange = !isStoredAppointmentInstant(midnight + 86_400_000 - 1) && !isStoredAppointmentInstant(midnight);
+        const busy = unavailableReason || outsideStorageRange ? [] : await AppointmentReads.getDoctorBusyIntervals(this.db, doctorId, clinicId, midnight, midnight + 86_400_000, current?.appointment_id);
+        const currentInterval = current ? { start: Date.parse(current.start_date_time), end: Date.parse(current.end_date_time) } : undefined;
+        return { clinic_id: clinicId, doctor_id: doctorId, date, time_zone: APPOINTMENT_TIME_ZONE,
+            server_now: now.toISOString(), minimum_advance_minutes: MINIMUM_APPOINTMENT_ADVANCE_MINUTES,
+            duration_minutes: policy.duration, unavailable_reason: unavailableReason,
+            slots: createAvailabilitySlots(policy, date, now, busy, currentInterval) };
+    }
+
+    private async getSchedulingPolicy(db: Db, clinicId: number, doctorId: number): Promise<ClinicSchedulingPolicy> {
+        const rules = (await getClinicSchedulingRules(db, clinicId))[0];
+        if (!rules) throw new NotFoundException('Clínica no encontrada.');
+        const doctorRole = await getRoleByIds(db, clinicId, doctorId);
+        if (!doctorRole || !['Owner', 'Admin', 'Doctor'].includes(doctorRole.role_within_clinic)) {
+            throw new BadRequestException('El médico no pertenece a esta clínica.');
+        }
+        return parseClinicSchedulingPolicy(rules);
+    }
+
+    private async validateScheduling(db: Db, clinicId: number, doctorId: number, start: Date, end: Date, now: Date, excludeAppointmentId?: number): Promise<void> {
+        const policy = await this.getSchedulingPolicy(db, clinicId, doctorId);
+        validateAppointmentSlot(policy, start, end, now);
+        if (!await this.isDoctorAvailable(doctorId, clinicId, start, end, excludeAppointmentId, db)) {
+            throw new ConflictException('El médico no está disponible en este horario.');
+        }
     }
 
     async getPatientAppointments(patientId: number): Promise<AppointmentReads.Appointment[]> {
@@ -48,10 +84,7 @@ export class AppointmentsService {
     }
 
     async getClinicAppointments(clinicId: number, actorId: number, date: string): Promise<AppointmentReads.Appointment[]> {
-        const parsed = new Date(`${date}T00:00:00.000Z`);
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date) {
-            throw new BadRequestException('La fecha debe ser válida y usar el formato AAAA-MM-DD.');
-        }
+        validateSchedulingDate(date);
         const role = await getRoleByIds(this.db, clinicId, actorId);
         if (!role || !['Owner', 'Admin', 'Employee'].includes(role.role_within_clinic)) {
             throw new NotFoundException('Clínica no encontrada.');
@@ -72,21 +105,15 @@ export class AppointmentsService {
             const current = await AppointmentReads.getPatientAppointmentForUpdate(tx, id, patientId);
             if (!current) throw new NotFoundException('Cita no encontrada.');
             this.assertVersion(current, dto.expected_version);
+            const now = new Date(Date.now());
             const context = this.workflowContext(current, null);
-            if (!canRescheduleAppointment(context, patientId)) {
-                throw new BadRequestException('Solo puedes editar citas futuras programadas o confirmadas.');
+            if (changesTime ? !canRescheduleAppointment(context, patientId, now) : !canEditAppointmentNotes(context, patientId, now)) {
+                throw new BadRequestException(changesTime ?
+                    'Solo puedes reprogramar citas programadas o confirmadas con al menos una hora de anticipación.' :
+                    'Solo puedes editar notas de citas futuras programadas o confirmadas.');
             }
             if (changesTime) {
-                const start = dto.start_date_time!;
-                const end = dto.end_date_time!;
-                if (start.getTime() <= Date.now() || start >= end) throw new BadRequestException('El nuevo horario debe ser futuro y válido.');
-                if (end.getTime() - start.getTime() !== Number(current.duration_minutes) * 60_000) {
-                    throw new BadRequestException('La duración debe coincidir con el horario de la clínica.');
-                }
-                if (!await this.isDoctorAvailable(current.doctor_id, current.clinic_id, start, end, id, tx) ||
-                    !await this.isClinicAvailable(current.clinic_id, start, tx)) {
-                    throw new ConflictException('El médico o la clínica no están disponibles en este horario.');
-                }
+                await this.validateScheduling(tx, current.clinic_id, current.doctor_id, dto.start_date_time!, dto.end_date_time!, now, id);
             }
             const nextStatus = changesTime ? 'scheduled' : current.appointment_status;
             if (!await AppointmentWrites.updateAppointmentState(tx, current, nextStatus, dto)) throw new ConflictException('La cita cambió. Actualiza e inténtalo de nuevo.');
@@ -120,7 +147,7 @@ export class AppointmentsService {
             this.assertVersion(current, expectedVersion);
             if (patientOnly && current.appointment_status === 'cancelled') return this.snapshot(tx, id, actorId);
             const context = this.workflowContext(current, patientOnly ? null : actorRole);
-            if (!allowedAppointmentActions(context, actorId).includes(action)) {
+            if (!allowedAppointmentActions(context, actorId, new Date(Date.now())).includes(action)) {
                 throw new BadRequestException('Esta acción no está permitida para el estado, horario o rol actual de la cita.');
             }
             if (action === 'start') {
@@ -150,9 +177,9 @@ export class AppointmentsService {
     private async snapshot(db: Db, id: number, actorId: number): Promise<AppointmentStateView> {
         const appointment = await AppointmentReads.getAppointmentByIdForActor(db, id, actorId);
         if (!appointment) throw new NotFoundException('Cita no encontrada.');
-        const { appointment_id, appointment_status, status_version, status_updated_at, allowed_actions, can_reschedule } = appointment;
+        const { appointment_id, appointment_status, status_version, status_updated_at, allowed_actions, can_reschedule, can_edit_notes, minimum_advance_minutes, change_deadline, server_now } = appointment;
         return { appointment_id, appointment_status, status_version, status_updated_at, allowed_actions, can_reschedule,
-            can_edit_notes: can_reschedule };
+            can_edit_notes, minimum_advance_minutes, change_deadline, server_now };
     }
 
     private async lockDoctor(db: Db, doctorId: number): Promise<void> {
@@ -161,21 +188,8 @@ export class AppointmentsService {
     }
 
     async isDoctorAvailable(drId: number, clinicId: number, start: Date, end: Date, excludeAppointmentId?: number, db: Db = this.db): Promise<boolean> {
-        const parameters: number[] = [drId, end.getTime() / 1000, start.getTime() / 1000];
-        if (excludeAppointmentId !== undefined) parameters.push(excludeAppointmentId);
-        const appointments = await db.query(
-            `SELECT 1 FROM appointments a JOIN clinics c ON a.clinic_id = c.clinic_id
-             WHERE a.doctor_id = ? AND a.appointment_status NOT IN ('cancelled', 'no_show')
-             AND a.scheduled_time_date < FROM_UNIXTIME(?)
-             AND DATE_ADD(a.scheduled_time_date, INTERVAL c.clinic_average_appointment_time MINUTE) > FROM_UNIXTIME(?)
-             ${excludeAppointmentId === undefined ? '' : 'AND a.appointment_id <> ?'} LIMIT 1`, parameters,
-        );
-        if (appointments.length) return false;
-        const absences = await db.query(
-            'SELECT 1 FROM absences WHERE doctor_id = ? AND clinic_id = ? AND start_date_time < FROM_UNIXTIME(?) AND end_date_time > FROM_UNIXTIME(?)',
-            [drId, clinicId, end.getTime() / 1000, start.getTime() / 1000],
-        );
-        return absences.length === 0;
+        const busy = await AppointmentReads.getDoctorBusyIntervals(db, drId, clinicId, start.getTime(), end.getTime(), excludeAppointmentId);
+        return busy.length === 0;
     }
 
     async isClinicAvailable(clinicId: number, start: Date, db: Db = this.db): Promise<boolean> {

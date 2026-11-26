@@ -8,7 +8,7 @@ import type { AppointmentAction, AppointmentStatus } from '../src/appointments/a
 
 const enabled = process.env.WORKFLOW_INTEGRATION === '1';
 const databaseName = process.env.DB_NAME ?? '';
-if (enabled && !/^MedAgenda_workflow_qa_[a-zA-Z0-9_]+$/.test(databaseName)) {
+if (enabled && !/^medagenda_workflow_qa_[a-zA-Z0-9_]+$/i.test(databaseName)) {
   throw new Error('Appointment integration tests require an isolated MedAgenda_workflow_qa_ database.');
 }
 const integration = enabled ? describe : describe.skip;
@@ -71,7 +71,7 @@ integration('Appointment workflow HTTP and MySQL integration', () => {
     await app.init();
     db = app.get(DatabaseService);
     const [identity] = await db.query<{ database_name: string }>('SELECT DATABASE() AS database_name');
-    if (identity.database_name !== databaseName || !identity.database_name.startsWith('MedAgenda_workflow_qa_')) {
+    if (identity.database_name.toLowerCase() !== databaseName.toLowerCase() || !/^medagenda_workflow_qa_[a-zA-Z0-9_]+$/i.test(identity.database_name)) {
       throw new Error('Refusing to mutate a database outside the isolated appointment test schema.');
     }
     isolatedVerified = true;
@@ -82,14 +82,14 @@ integration('Appointment workflow HTTP and MySQL integration', () => {
     if (!isolatedVerified) throw new Error('Isolated schema was not verified.');
     await db.execute('DELETE FROM appointment_status_events WHERE appointment_id >= 1000 AND appointment_id < 2000');
     await db.execute('DELETE FROM appointments WHERE appointment_id >= 1000 AND appointment_id < 2000');
-    await db.execute('UPDATE clinics SET is_open = TRUE WHERE clinic_id IN (101,102)');
+    await db.execute("UPDATE clinics SET is_open = TRUE, clinic_opening_time='00:00', clinic_close_time='23:59', clinic_average_appointment_time='30', clinic_break_time='12:00', clinic_break_duration='0' WHERE clinic_id IN (101,102)");
   });
 
   afterAll(async () => {
     if (db && isolatedVerified) {
       await db.execute('DELETE FROM appointment_status_events WHERE appointment_id >= 1000 AND appointment_id < 2000');
       await db.execute('DELETE FROM appointments WHERE appointment_id >= 1000 AND appointment_id < 2000');
-      await db.execute('UPDATE clinics SET is_open = TRUE WHERE clinic_id IN (101,102)');
+      await db.execute("UPDATE clinics SET is_open = TRUE, clinic_opening_time='00:00', clinic_close_time='23:59', clinic_average_appointment_time='30', clinic_break_time='12:00', clinic_break_duration='0' WHERE clinic_id IN (101,102)");
     }
     if (app) await app.close();
   });
@@ -240,7 +240,7 @@ integration('Appointment workflow HTTP and MySQL integration', () => {
     expect((await events()).map(event => event.action)).toEqual(['confirm', 'reschedule']);
     await db.execute('UPDATE clinics SET is_open=FALSE WHERE clinic_id=101');
     const refusedAt = movedAt + 60 * MINUTE;
-    await update(1000, 201, { expected_version: 2, start_date_time: new Date(refusedAt).toISOString(), end_date_time: new Date(refusedAt + 30 * MINUTE).toISOString() }).expect(409);
+    await update(1000, 201, { expected_version: 2, start_date_time: new Date(refusedAt).toISOString(), end_date_time: new Date(refusedAt + 30 * MINUTE).toISOString() }).expect(400);
     expect((await row()).status_version).toBe(2);
     expect(Number((await row()).starts_at_seconds)).toBe(movedAt / 1000);
     await db.execute('UPDATE clinics SET is_open=TRUE WHERE clinic_id=101');

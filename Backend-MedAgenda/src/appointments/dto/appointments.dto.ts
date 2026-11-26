@@ -1,5 +1,5 @@
-import { Type } from "class-transformer";
-import { IsDate, IsIn, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, Min, ValidateIf } from "class-validator";
+import { Transform, Type } from "class-transformer";
+import { IsDate, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Min, ValidateIf, isISO8601 } from "class-validator";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { APPOINTMENT_ACTIONS } from "../appointment-workflow";
 import type { AppointmentAction } from "../appointment-workflow";
@@ -29,7 +29,7 @@ export class CreateAppointmentDto {
         type: String,
         format: 'date-time',
     })
-    @Type(() => Date)
+    @Transform(({ value }) => strictAppointmentDate(value), { toClassOnly: true })
     @IsNotEmpty()
     @IsDate()
     start_date_time: Date;
@@ -40,7 +40,7 @@ export class CreateAppointmentDto {
         type: String,
         format: 'date-time',
     })
-    @Type(() => Date)
+    @Transform(({ value }) => strictAppointmentDate(value), { toClassOnly: true })
     @IsNotEmpty()
     @IsDate()
     end_date_time: Date;
@@ -69,13 +69,13 @@ export class UpdateAppointmentDto {
 
     @ApiPropertyOptional({ type: String, format: 'date-time' })
     @ValidateIf((_object, value) => value !== undefined)
-    @Type(() => Date)
+    @Transform(({ value }) => strictAppointmentDate(value), { toClassOnly: true })
     @IsDate()
     start_date_time?: Date;
 
     @ApiPropertyOptional({ type: String, format: 'date-time' })
     @ValidateIf((_object, value) => value !== undefined)
-    @Type(() => Date)
+    @Transform(({ value }) => strictAppointmentDate(value), { toClassOnly: true })
     @IsDate()
     end_date_time?: Date;
 }
@@ -89,4 +89,34 @@ export class AppointmentActionDto {
     @IsInt()
     @Min(0)
     expected_version: number;
+}
+
+function strictAppointmentDate(value: unknown): Date {
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,3})?)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/.test(value) ||
+        !isISO8601(value, { strict: true, strictSeparator: true })) return new Date(NaN);
+    return new Date(value);
+}
+
+export class AppointmentAvailabilityQueryDto {
+    @ApiProperty({ minimum: 1, example: 2 })
+    @Type(() => Number)
+    @IsInt()
+    @Min(1)
+    clinic_id: number;
+
+    @ApiProperty({ minimum: 1, example: 3 })
+    @Type(() => Number)
+    @IsInt()
+    @Min(1)
+    doctor_id: number;
+
+    @ApiProperty({ example: '2026-11-26', format: 'date' })
+    @IsString()
+    date: string;
+}
+
+export class AppointmentAvailabilityDateDto {
+    @ApiProperty({ example: '2026-11-26', format: 'date' })
+    @IsString()
+    date: string;
 }

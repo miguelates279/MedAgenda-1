@@ -1,3 +1,4 @@
+import { MINIMUM_APPOINTMENT_ADVANCE_MINUTES } from '../../appointments/appointment-scheduling';
 import { AppointmentSlot } from '../../appointments/repo/reads';
 import { Roles } from '../../auth/role_guard/roles.enum';
 import { Db } from '../../db/types/types';
@@ -21,11 +22,13 @@ export type Specialty = {
 }
 
 export type ClinicScheduleRules = {
-    clinic_opening_time: string,
-    clinic_close_time: string,
-    clinic_break_duration: string,
-    clinic_break_time: string,
-    clinic_average_appointment_time: string,
+    is_open: boolean | number,
+    minimum_advance_minutes: number,
+    clinic_opening_time: string | null,
+    clinic_close_time: string | null,
+    clinic_break_duration: string | null,
+    clinic_break_time: string | null,
+    clinic_average_appointment_time: string | null,
 }
 
 export async function getAllSpecialties(db: Db): Promise<Specialty[]> {
@@ -98,7 +101,7 @@ export async function getClinicDoctors(db: Db, clinic_id: number): Promise<Docto
 }
 
 export async function getClinicSchedulingRules(db: Db, clinic_id: number): Promise<ClinicScheduleRules[]> {
-    return await db.query<ClinicScheduleRules>('SELECT clinic_opening_time, clinic_break_time, clinic_close_time, clinic_break_duration, clinic_average_appointment_time FROM clinics WHERE clinic_id = ? LIMIT 1', [clinic_id]);
+    return await db.query<ClinicScheduleRules>('SELECT is_open, ? AS minimum_advance_minutes, clinic_opening_time, clinic_break_time, clinic_close_time, clinic_break_duration, clinic_average_appointment_time FROM clinics WHERE clinic_id = ? LIMIT 1', [MINIMUM_APPOINTMENT_ADVANCE_MINUTES, clinic_id]);
 }
 
 export async function getClinicDoctorAppointmentsForDay(db: Db, clinic_id: number, doctor_id: number, appointment_date: string): Promise<AppointmentSlot[]> {
